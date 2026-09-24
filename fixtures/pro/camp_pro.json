@@ -1,0 +1,33 @@
+{
+  "id": "camp_pro",
+  "project_id": "p",
+  "target_id": "t",
+  "session_id": "s",
+  "status": "stopped",
+  "stats": {
+    "total_findings": 19,
+    "critical": 5,
+    "high": 10,
+    "medium": 4,
+    "low": 0,
+    "info": 0,
+    "exploited": 4,
+    "confirmed": 15,
+    "unconfirmed": 0
+  },
+  "agents_dispatched": [
+    {
+      "agent": "iot-firmware",
+      "findings": 18,
+      "level": 0,
+      "status": "completed"
+    },
+    {
+      "agent": "aws",
+      "findings": 1,
+      "level": 0,
+      "status": "completed"
+    }
+  ],
+  "overall_risk": "critical"
+}

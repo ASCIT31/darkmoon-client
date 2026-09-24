@@ -1,0 +1,27 @@
+{
+  "id": "camp_20260728_9018be77",
+  "project_id": "proj_ae3ed3",
+  "target_id": "tgt_be6f57",
+  "session_id": "9018be77",
+  "is_subagent": false,
+  "date": "2026-07-28T07:09:09Z",
+  "duration_seconds": 900,
+  "status": "completed",
+  "methodology": "ISO 27001 / NIST SP 800-115 / MITRE ATT&CK",
+  "agents_dispatched": [],
+  "cascade_depth": 0,
+  "overall_risk": "critical",
+  "stats": {
+    "total_findings": 45,
+    "critical": 10,
+    "high": 11,
+    "medium": 19,
+    "low": 5,
+    "info": 0,
+    "exploited": 32,
+    "confirmed": 13,
+    "unconfirmed": 0
+  },
+  "report_path": "/reports/pentest_report_127.0.0.1_20260728-0801.md",
+  "executive_summary": "The OWASP Juice Shop v20.0.0 instance at http://127.0.0.1:3000 exhibits critical security vulnerabilities across multiple domains. SQL injection in the login and product search endpoints enables complete authentication bypass and full database exfiltration including all user credentials, TOTP secrets, and security answers. Mass assignment on user registration allows arbitrary admin account creation. JWT algorithm confusion (alg:none) permits forging authentication tokens for any user. DOM XSS in the search functionality chains to session hijacking. Additional high-severity findings include XXE processing, IDOR-based cross-user data access, unauthenticated product tampering, and null byte injection bypassing file access restrictions."
+}

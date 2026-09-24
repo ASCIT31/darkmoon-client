@@ -1,0 +1,27 @@
+{
+  "id": "camp_20260924_70602bf9",
+  "project_id": "proj_ae3ed3",
+  "target_id": "tgt_be6f57",
+  "session_id": "70602bf9",
+  "is_subagent": false,
+  "date": "2026-09-24T10:24:04Z",
+  "duration_seconds": 900,
+  "status": "completed",
+  "methodology": "ISO 27001 / NIST SP 800-115 / MITRE ATT&CK",
+  "agents_dispatched": [],
+  "cascade_depth": 0,
+  "overall_risk": "critical",
+  "stats": {
+    "total_findings": 5,
+    "critical": 2,
+    "high": 1,
+    "medium": 2,
+    "low": 0,
+    "info": 0,
+    "exploited": 5,
+    "confirmed": 0,
+    "unconfirmed": 0
+  },
+  "report_path": "/reports/pentest_report_127.0.0.1:3000_20260924-1030.md",
+  "executive_summary": "Bounded validation run against OWASP Juice Shop (127.0.0.1:3000) scoped strictly to SQL injection and IDOR/broken access control. Two critical/high-severity SQL injection flaws were fully exploited: an unauthenticated UNION-based injection in the product search endpoint that exfiltrated real user password hashes, and a classic auth-bypass injection in the login endpoint that yielded a valid administrator session with zero credentials. Two medium-severity IDOR findings were confirmed on the basket and user-profile REST endpoints, where any authenticated low-privilege customer could read another user's (including the admin's) basket contents and profile data by manipulating the numeric resource id; the corresponding write path was verified to correctly enforce ownership, limiting impact to read-only disclosure. No other vulnerability classes were tested, per explicit scope restriction."
+}

