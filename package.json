@@ -2,7 +2,25 @@
   "name": "@darkmoon/client",
   "version": "0.1.0",
   "description": "Cross-version common client contract for Darkmoon OSS (CLI) and Darkmoon Pro (REST). Foundation for the 5 official integrations.",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
+  "author": "ASC-IT (SARL) — Darkmoon",
+  "homepage": "https://github.com/ASCIT31/darkmoon-client#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ASCIT31/darkmoon-client.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ASCIT31/darkmoon-client/issues"
+  },
+  "keywords": [
+    "darkmoon",
+    "pentest",
+    "security",
+    "sast",
+    "dast",
+    "ci",
+    "vulnerability"
+  ],
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -20,9 +38,10 @@
   },
   "files": [
     "dist",
-    "fixtures",
     "CONTRACT.md",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=18"

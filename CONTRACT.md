@@ -157,10 +157,19 @@ npx darkmoon-ci run --target http://app:3000 --fail-on critical,high --json
 
 ### Kotlin (JetBrains)
 
-The Kotlin client does **not** import this JS. It re-implements the same
-normalization and asserts against the shared goldens in
+The Kotlin client (`darkmoon-client-kotlin`) does **not** re-implement the JS
+normalizer. It drives this package over a subprocess — the `darkmoon-ci` CLI /
+`darkmoon-bridge.mjs` — and deserializes the already-normalized JSON into Kotlin
+types that mirror the same frozen shapes (`CONTRACT_VERSION = "1.0.0"`, identical
+severity/status enum sets, `evidence=null` by default, two-key opt-in). Its
+conformance suite asserts against the shared goldens in
 `fixtures/conformance/*.golden.json` (language-neutral JSON produced by
-`scripts/gen-golden.mjs`). Same inputs → byte-identical normalized objects.
+`scripts/gen-golden.mjs`), verifying enum fidelity, redaction-safety and
+field-completeness. The normalization "unknown → info, never escalate" rule is
+therefore enforced once, here in the JS client, and consumed identically by all
+integrations (the Kotlin types fail loudly rather than silently escalate if an
+out-of-set value ever appears). The plugin ships its own copy of the goldens;
+regenerating them here (`npm run gen:golden`) requires re-syncing that copy.
 
 ## 6. Conformance guarantee
 
