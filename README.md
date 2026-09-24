@@ -1,4 +1,4 @@
-# @darkmoon/client
+# @darkmoon_ai/client
 
 Cross-version common client for **Darkmoon OSS** (CLI + JSON) and **Darkmoon Pro**
 (REST API), behind one frozen interface. This is the **foundation** the 5 official
@@ -27,7 +27,7 @@ npm run ci        # lint → typecheck → test → build
 ## Library usage
 
 ```ts
-import { DarkmoonClient, computeFailPolicy } from "@darkmoon/client";
+import { DarkmoonClient, computeFailPolicy } from "@darkmoon_ai/client";
 
 const client = new DarkmoonClient({
   mode: "auto",

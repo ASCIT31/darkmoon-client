@@ -1,4 +1,4 @@
-# `@darkmoon/client` — FROZEN contract (v1.0.0)
+# `@darkmoon_ai/client` — FROZEN contract (v1.0.0)
 
 This is the single interface the **5 official Darkmoon integrations** build against,
 in parallel, in isolated directories:
@@ -12,7 +12,7 @@ in parallel, in isolated directories:
 **Freeze rule:** the method signatures and the canonical enum value sets below are
 frozen for the `1.x` line. Additive fields are allowed; breaking changes bump the
 major and `CONTRACT_VERSION`. Everything is exported from the package root
-(`@darkmoon/client`). Nothing else is part of the contract.
+(`@darkmoon_ai/client`). Nothing else is part of the contract.
 
 `export const CONTRACT_VERSION = "1.0.0"`.
 
@@ -21,7 +21,7 @@ major and `CONTRACT_VERSION`. Everything is exported from the package root
 ## 1. Construct
 
 ```ts
-import { DarkmoonClient } from "@darkmoon/client";
+import { DarkmoonClient } from "@darkmoon_ai/client";
 
 const client = new DarkmoonClient({
   mode: "auto",            // "auto" | "oss" | "pro"
@@ -139,13 +139,13 @@ npm install /home/mehdi/darkmoon-client/darkmoon-client-0.1.0.tgz
 
 ```jsonc
 // integration/package.json
-{ "dependencies": { "@darkmoon/client": "file:../darkmoon-client" } }
+{ "dependencies": { "@darkmoon_ai/client": "file:../darkmoon-client" } }
 ```
 
 Then in any integration:
 
 ```ts
-import { DarkmoonClient, computeFailPolicy, CONTRACT_VERSION } from "@darkmoon/client";
+import { DarkmoonClient, computeFailPolicy, CONTRACT_VERSION } from "@darkmoon_ai/client";
 ```
 
 The **CLI** (`darkmoon-ci`) is the link method for Jenkins/GitLab shell steps:
