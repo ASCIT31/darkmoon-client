@@ -1,5 +1,7 @@
 # @darkmoon_ai/client
 
+> **📦 Marketplace status:** Live on [npm](https://www.npmjs.com/package/@darkmoon_ai/client).
+
 Cross-version client for **Darkmoon OSS (CLI)** and **Darkmoon Pro (REST)** — one frozen contract, both editions, redaction-safe by default.
 
 ![darkmoon-ci running against a synthetic Demo Shop lab (OSS mode)](https://raw.githubusercontent.com/ASCIT31/darkmoon-client/master/docs/screenshots/darkmoon-ci.png)
