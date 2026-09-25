@@ -10,6 +10,7 @@ import type {
   LaunchResult,
   ProgressEvent,
 } from "../contract.js";
+import type { DarkmoonClientExtensions } from "../extensions.js";
 
 /** Raw report fetch result before redaction policy is applied by the facade. */
 export interface RawReport {
@@ -27,7 +28,7 @@ export interface RawReport {
  * Backends return NORMALIZED contract objects so the conformance suite can assert
  * both produce identical output for the same underlying campaign.
  */
-export interface Backend {
+export interface Backend extends DarkmoonClientExtensions {
   readonly edition: "oss" | "pro";
   detect(): Promise<Capabilities>;
   launchCampaign(input: LaunchInput): Promise<LaunchResult>;

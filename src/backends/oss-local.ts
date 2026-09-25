@@ -22,7 +22,20 @@ import { refToId } from "./backend.js";
 import { Logger } from "../util/logger.js";
 import { normalizeCampaign, normalizeFinding, matchesFindingFilter, severitySummaryFromFindings } from "../normalize.js";
 import { parseCampaign, parseFindings } from "../schema.js";
-import { CampaignNotFound, CorrelationFailed, DarkmoonNotAvailable, FindingNotFound } from "../errors.js";
+import { CampaignNotFound, CorrelationFailed, DarkmoonNotAvailable, FindingNotFound, NotSupported } from "../errors.js";
+import type {
+  DarkmoonEvent,
+  EvidenceMeta,
+  EventStreamOptions,
+  RetestInput,
+  RetestLaunchResult,
+  RetestResult,
+  TimeseriesQuery,
+  TimeseriesResult,
+  WebhookInput,
+  WebhookRegistration,
+} from "../extensions.js";
+import { computeRetestVerdicts, evidenceMetaFromFinding, summarizeVerdicts } from "../extensions-compute.js";
 
 export interface OssLocalConfig {
   /** Data dir containing campaigns/ and vulnerabilities/ (host-side bind mount). */
@@ -53,6 +66,8 @@ export class OssLocalBackend implements Backend {
   private vulnsDir: string;
   private reportsDir: string;
   private scriptPath: string;
+  /** In-process retest tracking (OSS is stateless across runs; best-effort). */
+  private retests = new Map<string, { baseCampaignId: string; targetId: string | null; correlation: CorrelationHandle; findingIds?: string[] }>();
 
   constructor(cfg: OssLocalConfig) {
     this.cfg = cfg;
@@ -384,6 +399,184 @@ export class OssLocalBackend implements Backend {
       await sleep(pollMs);
     }
   }
+
+  // ── v0.2.0 additive surface (graceful OSS degradation) ──────────────────
+
+  // OSS ships NO API server, so outbound webhooks cannot be dispatched. We fail
+  // loudly with NOT_SUPPORTED rather than pretend — integrations branch on the
+  // code and fall back to the polling event stream below.
+  async registerWebhook(_input: WebhookInput): Promise<WebhookRegistration> {
+    throw new NotSupported("Webhooks require Darkmoon Pro (OSS runs no server). Use streamEvents() polling instead.");
+  }
+  async listWebhooks(): Promise<WebhookRegistration[]> {
+    throw new NotSupported("Webhooks require Darkmoon Pro (OSS runs no server).");
+  }
+  async deleteWebhook(_id: string): Promise<boolean> {
+    throw new NotSupported("Webhooks require Darkmoon Pro (OSS runs no server).");
+  }
+
+  /** OSS retest = launch a fresh campaign on the base scope; verdict computed client-side. */
+  async launchRetest(input: RetestInput): Promise<RetestLaunchResult> {
+    let baseCampaignId = input.campaignId ?? null;
+    let targetId: string | null = null;
+    let targetHost: string | null = null;
+
+    if (baseCampaignId) {
+      const base = await this.getCampaign(baseCampaignId);
+      targetId = base.targetId;
+      targetHost = base.target;
+    } else if (input.targetId) {
+      const campaigns = (await this.listCampaigns({ targetId: input.targetId }))
+        .sort((a, b) => String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")));
+      const base = campaigns[campaigns.length - 1];
+      if (!base) throw new CampaignNotFound(`No prior campaign for target ${input.targetId}.`);
+      baseCampaignId = base.id;
+      targetId = base.targetId;
+      targetHost = base.target;
+    } else {
+      throw new NotSupported("launchRetest requires targetId or campaignId.");
+    }
+
+    if (!targetHost) throw new CampaignNotFound("Cannot resolve target host to retest.");
+
+    const launched = await this.launchCampaign({ target: targetHost, safeHarbor: input.safeHarbor ?? "non-destructive" });
+    const retestId = `retest_${randomHex(8)}`;
+    this.retests.set(retestId, {
+      baseCampaignId: baseCampaignId!,
+      targetId,
+      correlation: launched.correlation,
+      findingIds: input.findingIds,
+    });
+    return { retestId, runId: launched.runId, baseCampaignId, targetId };
+  }
+
+  async getRetest(id: string): Promise<RetestResult> {
+    const rec = this.retests.get(id);
+    if (!rec) throw new NotSupported(`Retest ${id} is not tracked in this process (OSS retests are in-memory).`);
+    const newCampaignId = await this.resolveCampaignId(rec.correlation);
+    let status: "running" | "completed" = "running";
+    let findings = [] as ReturnType<typeof computeRetestVerdicts>;
+    if (newCampaignId) {
+      const newCampaign = await this.getCampaign(newCampaignId).catch(() => null);
+      if (newCampaign && !RUNNING_STATUSES.has(newCampaign.status)) status = "completed";
+      const base = await this.listFindings({ campaignId: rec.baseCampaignId }, { includeEvidence: false });
+      const next = await this.listFindings({ campaignId: newCampaignId }, { includeEvidence: false });
+      findings = computeRetestVerdicts(base, next, rec.findingIds);
+    }
+    return {
+      retestId: id,
+      baseCampaignId: rec.baseCampaignId,
+      newCampaignId,
+      targetId: rec.targetId,
+      runId: rec.correlation.runId,
+      status,
+      verdictsSummary: summarizeVerdicts(findings),
+      findings,
+      edition: "oss",
+    };
+  }
+
+  async getEvidenceMeta(id: string): Promise<EvidenceMeta> {
+    // Fetch the finding WITH (redacted) evidence, then derive counts only.
+    const finding = await this.getFinding(id, { includeEvidence: true }).catch(() => null);
+    if (!finding) throw new FindingNotFound(`Finding ${id} not found.`, { id });
+    return evidenceMetaFromFinding(id, finding);
+  }
+
+  async getTimeseries(query: TimeseriesQuery = {}): Promise<TimeseriesResult> {
+    const metric = query.metric ?? "severity";
+    const group = query.group ?? "day";
+    let campaigns = await this.listCampaigns();
+    if (query.projectId) campaigns = campaigns.filter((c) => c.projectId === query.projectId);
+    if (query.targetId) campaigns = campaigns.filter((c) => c.targetId === query.targetId);
+    if (query.from) campaigns = campaigns.filter((c) => String(c.createdAt ?? "").slice(0, 10) >= query.from!);
+    if (query.to) campaigns = campaigns.filter((c) => String(c.createdAt ?? "").slice(0, 10) <= query.to!);
+    campaigns.sort((a, b) => String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")));
+
+    const buckets: string[] = [];
+    const grid = new Map<string, Map<string, number>>();
+    const keys: string[] = [];
+    const add = (b: string, key: string) => {
+      if (!grid.has(b)) { grid.set(b, new Map()); buckets.push(b); }
+      const row = grid.get(b)!;
+      row.set(key, (row.get(key) ?? 0) + 1);
+      if (!keys.includes(key)) keys.push(key);
+    };
+    for (const c of campaigns) {
+      const b = group === "campaign" ? c.id : String(c.createdAt ?? "").slice(0, 10) || "unknown";
+      if (metric === "campaigns") { add(b, "campaigns"); continue; }
+      const fs = await this.listFindings({ campaignId: c.id }, { includeEvidence: false });
+      for (const f of fs) {
+        const value = metric === "severity" ? f.severity : metric === "status" ? f.status : (f.category ?? "unknown");
+        add(b, String(value ?? "unknown").toLowerCase());
+      }
+    }
+    return {
+      metric, group, edition: "oss",
+      series: keys.map((key) => ({ key, points: buckets.map((b) => ({ t: b, value: grid.get(b)?.get(key) ?? 0 })) })),
+    };
+  }
+
+  /**
+   * OSS has no event bus. We synthesize the same event taxonomy by polling the
+   * data dir and diffing campaigns/findings, so a trigger works identically
+   * (graceful degradation). Yields until the AbortSignal fires.
+   */
+  async *streamEvents(opts: EventStreamOptions = {}): AsyncIterable<DarkmoonEvent> {
+    const pollMs = opts.pollIntervalMs ?? 5000;
+    const wanted = opts.events?.length ? new Set(opts.events) : null;
+    let seq = opts.since ?? 0;
+    const seenCampaign = new Map<string, string>();      // id -> status
+    const seenFinding = new Map<string, string>();       // id -> status
+    let first = true;
+
+    const emit = (event: string, data: Record<string, unknown>): DarkmoonEvent | null => {
+      if (wanted && !wanted.has(event)) return null;
+      return { event, contractVersion: "1", seq: ++seq, deliveryId: null, ts: new Date().toISOString(), data };
+    };
+
+    for (;;) {
+      if (opts.signal?.aborted) return;
+      const campaigns = await this.listCampaigns().catch(() => []);
+      for (const c of campaigns) {
+        const prev = seenCampaign.get(c.id);
+        const findings = await this.listFindings({ campaignId: c.id }, { includeEvidence: false }).catch(() => []);
+        if (prev === undefined) {
+          if (!first) {
+            if (c.status === "running") { const e = emit("campaign.started", { campaign_id: c.id, target_id: c.targetId, status: c.status }); if (e) yield e; }
+            if (["completed", "stopped", "failed"].includes(c.status)) { const e = emit(`campaign.${c.status === "failed" ? "aborted" : c.status}`, { campaign_id: c.id, target_id: c.targetId, status: c.status }); if (e) yield e; }
+          }
+        } else if (prev !== c.status && ["completed", "stopped", "failed"].includes(c.status)) {
+          const e = emit(`campaign.${c.status === "failed" ? "aborted" : c.status}`, { campaign_id: c.id, target_id: c.targetId, status: c.status });
+          if (e) yield e;
+        }
+        seenCampaign.set(c.id, c.status);
+        for (const f of findings) {
+          if (!f.id) continue;
+          const prevF = seenFinding.get(f.id);
+          if (prevF === undefined) {
+            if (!first) {
+              const e = emit("finding.discovered", safeFindingData(f, c.id)); if (e) yield e;
+              if (["confirmed", "exploited", "remediated"].includes(f.status)) { const e2 = emit(`finding.${f.status}`, safeFindingData(f, c.id)); if (e2) yield e2; }
+            }
+          } else if (prevF !== f.status && ["confirmed", "exploited", "remediated"].includes(f.status)) {
+            const e = emit(`finding.${f.status}`, safeFindingData(f, c.id)); if (e) yield e;
+          }
+          seenFinding.set(f.id, f.status);
+        }
+      }
+      first = false;
+      await sleep(pollMs);
+    }
+  }
+}
+
+function safeFindingData(f: Finding, campaignId: string): Record<string, unknown> {
+  return {
+    finding_id: f.id, campaign_id: campaignId, target_id: f.targetId, title: f.title,
+    severity: f.severity, status: f.status, category: f.category, cve: f.cve,
+    cvss_score: f.cvssScore, endpoint: f.endpoint, has_evidence: f.evidence != null,
+  };
 }
 
 function randomHex(n: number): string {

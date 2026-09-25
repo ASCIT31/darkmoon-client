@@ -1,8 +1,9 @@
 /**
- * @darkmoon/client — public entry point.
+ * @darkmoon_ai/client — public entry point.
  *
- * The FROZEN contract lives in ./contract. The 5 official integrations import
- * ONLY from this package root. See CONTRACT.md for the linkable API surface.
+ * The FROZEN v1 contract lives in ./contract. The v0.2.0 ADDITIVE surface (used
+ * by the Splunk / Grafana / n8n integrations) lives in ./extensions. Integrations
+ * import ONLY from this package root. See CONTRACT.md for the linkable API.
  */
 
 export { DarkmoonClient, type DarkmoonClientConfig } from "./client.js";
@@ -94,3 +95,31 @@ export {
   NotSupported,
   type DarkmoonErrorCode,
 } from "./errors.js";
+
+// ── v0.2.0 additive surface (Phase-2 integrations: Splunk / Grafana / n8n) ──
+export type {
+  WebhookInput,
+  WebhookRegistration,
+  RetestInput,
+  RetestLaunchResult,
+  RetestResult,
+  RetestVerdict,
+  RetestFindingVerdict,
+  EvidenceMeta,
+  TimeseriesQuery,
+  TimeseriesMetric,
+  TimeseriesGroup,
+  TimeseriesPoint,
+  TimeseriesSeries,
+  TimeseriesResult,
+  DarkmoonEvent,
+  EventStreamOptions,
+  DarkmoonClientExtensions,
+} from "./extensions.js";
+
+export {
+  findingKey,
+  evidenceMetaFromFinding,
+  computeRetestVerdicts,
+  summarizeVerdicts,
+} from "./extensions-compute.js";

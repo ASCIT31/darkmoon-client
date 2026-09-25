@@ -39,6 +39,13 @@ async function listCampaignFiles(): Promise<string[]> {
 export async function startMockPro(opts: MockProOptions = {}): Promise<MockProServer> {
   const version = opts.version ?? "1.0.0";
   const requests: string[] = [];
+  // In-memory stores for the Phase-2 additive endpoints.
+  const webhooks: any[] = [];
+  const events: any[] = [
+    { event: "campaign.started", contract_version: "1", seq: 1, delivery_id: "d1", ts: "2026-09-25T10:00:00Z", data: { campaign_id: "camp_20260924_70602bf9", status: "running" } },
+    { event: "finding.exploited", contract_version: "1", seq: 2, delivery_id: "d2", ts: "2026-09-25T10:01:00Z", data: { finding_id: "vuln_1", severity: "critical", status: "exploited", has_evidence: true } },
+    { event: "campaign.completed", contract_version: "1", seq: 3, delivery_id: "d3", ts: "2026-09-25T10:05:00Z", data: { campaign_id: "camp_20260924_70602bf9", status: "completed" } },
+  ];
 
   const server = http.createServer(async (req, res) => {
     requests.push(`${req.method} ${req.url}`);
@@ -176,6 +183,97 @@ export async function startMockPro(opts: MockProOptions = {}): Promise<MockProSe
         res.write(`data: ${JSON.stringify({ type: "run_completed", campaign_id: "camp_20260924_70602bf9" })}\n\n`);
         res.end();
         return;
+      }
+
+      // Evidence metadata (must be matched before the vuln-detail $-anchored regex)
+      m = p.match(/^\/api\/v1\/vulnerabilities\/([^/]+)\/evidence-meta$/);
+      if (m && req.method === "GET") {
+        const id = decodeURIComponent(m[1]!);
+        const files = await fs.readdir(path.join(DATAROOT, "vulnerabilities"));
+        for (const f of files.filter((x) => x.endsWith(".json"))) {
+          const arr = await readJson(path.join(DATAROOT, "vulnerabilities", f));
+          const hit = arr.find((v: any) => String(v.id ?? v.node_id) === id);
+          if (hit) {
+            const ev = Array.isArray(hit.evidence) ? hit.evidence : hit.evidence ? [hit.evidence] : [];
+            return send(200, {
+              vuln_id: id, has_evidence: ev.length > 0,
+              counts: { commands: 1, payloads: 0, screenshots: 0, logs: 0, requests: 0 },
+              command_names: ["curl"], has_screenshot: false, has_extracted_data: false, redacted: true,
+            });
+          }
+        }
+        return send(404, { detail: `Vulnerability ${id} not found` });
+      }
+
+      // Webhooks
+      if (p === "/api/v1/webhooks" && req.method === "POST") {
+        const body = await readBody(req);
+        if (!body.url || !/^https?:\/\//.test(body.url)) return send(400, { detail: "webhook url must be http(s)" });
+        const row = { id: `wh_${Math.random().toString(16).slice(2, 8)}`, url: body.url, events: body.events ?? [], secret: body.secret ?? "sekret_" + Math.random().toString(16).slice(2, 10), format: body.format ?? "darkmoon", enabled: true, created_at: "2026-09-25T10:00:00Z" };
+        webhooks.push(row);
+        return send(200, { data: row, note: "store the secret now" });
+      }
+      if (p === "/api/v1/webhooks" && req.method === "GET") {
+        return send(200, { data: webhooks.map((w) => ({ ...w, secret: "set:" + String(w.secret).slice(-4) })), total: webhooks.length, event_types: ["finding.exploited", "campaign.completed"], contract_version: "1" });
+      }
+      m = p.match(/^\/api\/v1\/webhooks\/([^/]+)$/);
+      if (m && req.method === "DELETE") {
+        const id = decodeURIComponent(m[1]!);
+        const before = webhooks.length;
+        for (let i = webhooks.length - 1; i >= 0; i--) if (webhooks[i].id === id) webhooks.splice(i, 1);
+        if (webhooks.length === before) return send(404, { detail: "not found" });
+        return send(200, { message: "Deleted", id });
+      }
+      m = p.match(/^\/api\/v1\/webhooks\/([^/]+)\/test$/);
+      if (m && req.method === "POST") {
+        return send(200, { data: { ok: true, status: 200, attempts: 1, delivery_id: "test" } });
+      }
+
+      // Consolidated event stream (poll + SSE)
+      if (p === "/api/v1/events/stream" && req.method === "GET") {
+        const since = Number(url.searchParams.get("since") ?? 0);
+        const wanted = (url.searchParams.get("events") ?? "").split(",").filter(Boolean);
+        let batch = events.filter((e) => e.seq > since);
+        if (wanted.length) batch = batch.filter((e) => wanted.includes(e.event));
+        if (url.searchParams.get("poll") === "1") {
+          const cursor = batch.length ? batch[batch.length - 1].seq : since;
+          return send(200, { data: batch, cursor, count: batch.length, event_types: [], contract_version: "1" });
+        }
+        res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
+        for (const e of batch) res.write(`id: ${e.seq}\ndata: ${JSON.stringify(e)}\n\n`);
+        res.end();
+        return;
+      }
+
+      // Retest
+      if (p === "/api/v1/retest" && req.method === "POST") {
+        const body = await readBody(req);
+        if (!body.target_id && !body.campaign_id) return send(400, { detail: "target_id or campaign_id is required" });
+        return send(200, { retest_id: "retest_abc123", run_id: "run_retest_1", base_campaign_id: body.campaign_id ?? "camp_base", target_id: body.target_id ?? "tgt_1" });
+      }
+      m = p.match(/^\/api\/v1\/retest\/([^/]+)$/);
+      if (m && req.method === "GET") {
+        const id = decodeURIComponent(m[1]!);
+        if (id === "missing") return send(404, { detail: "retest not found" });
+        return send(200, {
+          retest_id: id, base_campaign_id: "camp_base", new_campaign_id: "camp_new", target_id: "tgt_1", run_id: "run_retest_1",
+          status: "completed",
+          verdicts_summary: { fixed: 1, still_present: 1, regressed: 1, new: 1 },
+          findings: [
+            { finding_id: "f1", new_finding_id: null, base_status: "confirmed", new_status: null, severity: "high", verdict: "fixed" },
+            { finding_id: "f2", new_finding_id: "f2b", base_status: "exploited", new_status: "exploited", severity: "critical", verdict: "still_present" },
+            { finding_id: "f3", new_finding_id: "f3b", base_status: "remediated", new_status: "confirmed", severity: "medium", verdict: "regressed" },
+            { finding_id: null, new_finding_id: "f4", base_status: null, new_status: "confirmed", severity: "low", verdict: "new" },
+          ],
+        });
+      }
+
+      // Metrics / timeseries
+      if (p === "/api/v1/metrics/timeseries" && req.method === "GET") {
+        const metric = url.searchParams.get("metric") ?? "severity";
+        const group = url.searchParams.get("group") ?? "day";
+        if (!["severity", "status", "category", "campaigns"].includes(metric)) return send(400, { detail: "bad metric" });
+        return send(200, { metric, group, series: [{ key: "critical", points: [{ t: "2026-09-24", value: 2 }, { t: "2026-09-25", value: 3 }] }] });
       }
 
       return send(404, { detail: "Not Found" });

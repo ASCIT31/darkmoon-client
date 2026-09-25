@@ -13,18 +13,32 @@ import type {
 import { webcrypto } from "node:crypto";
 import type { Backend, RawReport } from "./backend.js";
 import { refToId } from "./backend.js";
-import { httpRequest, safeUrl } from "../util/http.js";
+import { httpRequest, safeUrl, type HttpResponse } from "../util/http.js";
 import { readSse } from "../util/sse.js";
 import { Logger } from "../util/logger.js";
 import { normalizeCampaign, normalizeFinding, matchesFindingFilter } from "../normalize.js";
 import { negotiateProVersion, parseCampaign, parseFindings } from "../schema.js";
+import type {
+  DarkmoonEvent,
+  EvidenceMeta,
+  EventStreamOptions,
+  RetestInput,
+  RetestLaunchResult,
+  RetestResult,
+  TimeseriesQuery,
+  TimeseriesResult,
+  WebhookInput,
+  WebhookRegistration,
+} from "../extensions.js";
 import {
   AuthError,
   CampaignNotFound,
   CorrelationFailed,
+  DarkmoonError,
   DarkmoonNotAvailable,
   FindingNotFound,
   InsecureDefaultError,
+  NetworkError,
 } from "../errors.js";
 
 const REPORT_PLACEHOLDER_PREFIX = "# Report not found";
@@ -43,6 +57,15 @@ export interface ProHttpConfig {
    * still has must_change_password / a default secret. Set false to only warn.
    */
   refuseInsecureDefault?: boolean;
+  /**
+   * Opt-in bounded retry for idempotent GETs on transient NETWORK/5xx failures
+   * (used by the v0.2.0 methods). Default 0 = no retry (preserves v0.1 behaviour).
+   */
+  retries?: number;
+  /** Base backoff between retries in ms (exponential + jitter). Default 300. */
+  backoffMs?: number;
+  /** Opt-in client-side cap on list/timeseries result sizes. Default 0 = unlimited. */
+  pageSize?: number;
 }
 
 export class ProHttpBackend implements Backend {
@@ -372,6 +395,219 @@ export class ProHttpBackend implements Backend {
       if (terminal) return;
     }
   }
+
+  // ── v0.2.0 additive surface ────────────────────────────────────────────
+
+  /** GET with opt-in bounded retry on transient NETWORK/5xx (idempotent only). */
+  private async getWithRetry<T>(url: string, allowStatuses?: number[]): Promise<HttpResponse<T>> {
+    const retries = Math.max(0, this.cfg.retries ?? 0);
+    const base = this.cfg.backoffMs ?? 300;
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await httpRequest<T>(url, { token: this.token, timeoutMs: this.cfg.timeoutMs, allowStatuses });
+      } catch (err) {
+        lastErr = err;
+        const retryable = err instanceof NetworkError ||
+          (err instanceof DarkmoonError && err.code === "NETWORK");
+        if (!retryable || attempt === retries) break;
+        const backoff = base * 2 ** attempt;
+        await sleep(backoff + Math.random() * (backoff / 2));
+      }
+    }
+    throw lastErr;
+  }
+
+  async registerWebhook(input: WebhookInput): Promise<WebhookRegistration> {
+    await this.ensureAuth();
+    const res = await httpRequest<{ data: any }>(`${this.apiBase}/webhooks`, {
+      method: "POST",
+      body: { url: input.url, events: input.events, secret: input.secret, format: input.format ?? "darkmoon" },
+      token: this.token,
+      timeoutMs: this.cfg.timeoutMs,
+      allowStatuses: [400],
+    });
+    if (res.status === 400 || !res.data?.data) {
+      throw new DarkmoonError("BAD_REQUEST", `Webhook registration rejected: ${extractDetail(res) ?? "invalid url/events"}.`);
+    }
+    return mapWebhook(res.data.data);
+  }
+
+  async listWebhooks(): Promise<WebhookRegistration[]> {
+    await this.ensureAuth();
+    const res = await this.getWithRetry<{ data: any[] }>(`${this.apiBase}/webhooks`);
+    return (res.data?.data ?? []).map(mapWebhook);
+  }
+
+  async deleteWebhook(id: string): Promise<boolean> {
+    await this.ensureAuth();
+    const res = await httpRequest<any>(`${this.apiBase}/webhooks/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      token: this.token,
+      timeoutMs: this.cfg.timeoutMs,
+      allowStatuses: [404],
+    });
+    return res.status !== 404;
+  }
+
+  async launchRetest(input: RetestInput): Promise<RetestLaunchResult> {
+    await this.ensureAuth();
+    const res = await httpRequest<any>(`${this.apiBase}/retest`, {
+      method: "POST",
+      body: {
+        target_id: input.targetId,
+        campaign_id: input.campaignId,
+        finding_ids: input.findingIds,
+        safe_harbor: input.safeHarbor,
+      },
+      token: this.token,
+      timeoutMs: this.cfg.timeoutMs,
+      allowStatuses: [400, 403, 404],
+    });
+    if (res.status === 403) throw new DarkmoonError("BAD_REQUEST", "Retest target is out of scope (allowlist).");
+    if (res.status === 404) throw new CampaignNotFound("Base campaign for retest not found.");
+    if (res.status === 400 || !res.data?.retest_id) {
+      throw new DarkmoonError("BAD_REQUEST", `Retest launch rejected: ${extractDetail(res) ?? "target_id or campaign_id required"}.`);
+    }
+    return {
+      retestId: res.data.retest_id,
+      runId: res.data.run_id ?? null,
+      baseCampaignId: res.data.base_campaign_id ?? null,
+      targetId: res.data.target_id ?? null,
+    };
+  }
+
+  async getRetest(id: string): Promise<RetestResult> {
+    const res = await this.getWithRetry<any>(`${this.apiBase}/retest/${encodeURIComponent(id)}`, [404]);
+    if (res.status === 404 || !res.data?.retest_id) {
+      throw new DarkmoonError("BAD_REQUEST", `Retest ${id} not found.`, { id });
+    }
+    return mapRetest(res.data, "pro");
+  }
+
+  async getEvidenceMeta(id: string): Promise<EvidenceMeta> {
+    const res = await this.getWithRetry<any>(`${this.apiBase}/vulnerabilities/${encodeURIComponent(id)}/evidence-meta`, [404]);
+    if (res.status === 404 || !res.data) {
+      throw new FindingNotFound(`Finding ${id} not found.`, { id });
+    }
+    const d = res.data;
+    return {
+      vulnId: d.vuln_id ?? id,
+      hasEvidence: Boolean(d.has_evidence),
+      counts: {
+        commands: Number(d.counts?.commands ?? 0),
+        payloads: Number(d.counts?.payloads ?? 0),
+        screenshots: Number(d.counts?.screenshots ?? 0),
+        logs: Number(d.counts?.logs ?? 0),
+        requests: Number(d.counts?.requests ?? 0),
+      },
+      commandNames: Array.isArray(d.command_names) ? d.command_names.map(String) : [],
+      hasScreenshot: Boolean(d.has_screenshot),
+      hasExtractedData: Boolean(d.has_extracted_data),
+      redacted: d.redacted !== false,
+    };
+  }
+
+  async getTimeseries(query: TimeseriesQuery = {}): Promise<TimeseriesResult> {
+    const qs = new URLSearchParams();
+    qs.set("metric", query.metric ?? "severity");
+    qs.set("group", query.group ?? "day");
+    if (query.projectId) qs.set("project_id", query.projectId);
+    if (query.targetId) qs.set("target_id", query.targetId);
+    if (query.from) qs.set("from", query.from);
+    if (query.to) qs.set("to", query.to);
+    const res = await this.getWithRetry<any>(`${this.apiBase}/metrics/timeseries?${qs}`, [400]);
+    if (res.status === 400) throw new DarkmoonError("BAD_REQUEST", `Invalid timeseries query: ${extractDetail(res) ?? "bad metric/group"}.`);
+    let series = Array.isArray(res.data?.series) ? res.data.series : [];
+    const cap = this.cfg.pageSize ?? 0;
+    if (cap > 0) series = series.slice(0, cap);
+    return {
+      metric: String(res.data?.metric ?? query.metric ?? "severity"),
+      group: String(res.data?.group ?? query.group ?? "day"),
+      series: series.map((s: any) => ({
+        key: String(s.key),
+        points: (s.points ?? []).map((p: any) => ({ t: String(p.t), value: Number(p.value ?? 0) })),
+      })),
+      edition: "pro",
+    };
+  }
+
+  /**
+   * Consolidated event stream via the Pro SSE feed (/events/stream), replayable
+   * from the `since` cursor. Yields normalized DarkmoonEvents until the caller
+   * breaks, the connection ends, or the AbortSignal fires.
+   */
+  async *streamEvents(opts: EventStreamOptions = {}): AsyncIterable<DarkmoonEvent> {
+    await this.ensureAuth();
+    const qs = new URLSearchParams();
+    qs.set("since", String(opts.since ?? 0));
+    if (opts.events?.length) qs.set("events", opts.events.join(","));
+    const url = `${this.apiBase}/events/stream?${qs}`;
+    for await (const raw of readSse(url, { token: this.token, signal: opts.signal })) {
+      const e = raw as any;
+      if (!e || typeof e !== "object" || !e.event) continue;
+      yield mapEvent(e);
+    }
+  }
+}
+
+function extractDetail(res: HttpResponse<any>): string | null {
+  const d = (res.data as any)?.detail;
+  return typeof d === "string" ? d : null;
+}
+
+function mapWebhook(row: any): WebhookRegistration {
+  return {
+    id: String(row.id),
+    url: String(row.url ?? ""),
+    events: Array.isArray(row.events) ? row.events.map(String) : [],
+    format: String(row.format ?? "darkmoon"),
+    enabled: row.enabled !== false,
+    createdAt: row.created_at ?? null,
+    ...(typeof row.secret === "string" ? { secret: row.secret } : {}),
+  };
+}
+
+function mapRetest(d: any, edition: "oss" | "pro"): RetestResult {
+  const summary = d.verdicts_summary ?? {};
+  return {
+    retestId: String(d.retest_id),
+    baseCampaignId: d.base_campaign_id ?? null,
+    newCampaignId: d.new_campaign_id ?? null,
+    targetId: d.target_id ?? null,
+    runId: d.run_id ?? null,
+    status: d.status === "completed" ? "completed" : "running",
+    verdictsSummary: {
+      fixed: Number(summary.fixed ?? 0),
+      still_present: Number(summary.still_present ?? 0),
+      regressed: Number(summary.regressed ?? 0),
+      new: Number(summary.new ?? 0),
+    },
+    findings: (d.findings ?? []).map((f: any) => ({
+      findingId: f.finding_id ?? null,
+      newFindingId: f.new_finding_id ?? null,
+      baseStatus: f.base_status ?? null,
+      newStatus: f.new_status ?? null,
+      severity: f.severity ?? null,
+      verdict: f.verdict,
+    })),
+    edition,
+  };
+}
+
+function mapEvent(e: any): DarkmoonEvent {
+  return {
+    event: String(e.event),
+    contractVersion: String(e.contract_version ?? "1"),
+    seq: Number(e.seq ?? 0),
+    deliveryId: e.delivery_id ?? null,
+    ts: e.ts ?? null,
+    data: (e.data && typeof e.data === "object") ? e.data : {},
+  };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 function syntheticRunning(runId: string | null): Campaign {

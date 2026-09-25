@@ -4,6 +4,40 @@ All notable changes to `@darkmoon_ai/client` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-09-25
+
+Additive release for the Phase-2 integrations (Splunk, Grafana, n8n). The frozen
+v1 contract (`CONTRACT_VERSION = 1.0.0`) is unchanged — every addition is new
+surface, so 0.1 consumers are unaffected.
+
+### Added
+- **Webhooks** — `registerWebhook()` / `listWebhooks()` / `deleteWebhook()` wrap
+  the Pro outbound webhook registry. Deliveries are HMAC-SHA256 signed +
+  replay-protected, safe-field-only. OSS throws `NOT_SUPPORTED` (no server) so
+  callers fall back to `streamEvents()` polling.
+- **Retest + derived verdict** — `launchRetest()` / `getRetest()` return a
+  per-finding verdict `{ fixed | still_present | regressed | new }`, computed by
+  diffing base vs new findings (never a stored status). Pro uses the `/retest`
+  endpoint; OSS runs a fresh campaign and computes the verdict client-side.
+- **Evidence metadata** — `getEvidenceMeta()` returns counts / booleans /
+  command-names only, never evidence bodies (honours the two-key redaction rule).
+- **Time-series** — `getTimeseries()` returns server-side rollups on Pro,
+  client-side rollups on OSS.
+- **Consolidated event stream** — `streamEvents({ since, events })` yields the
+  versioned safe-field envelopes (SSE on Pro; synthetic poll-based diff on OSS).
+- New normalized types: `WebhookRegistration`, `RetestResult`,
+  `RetestFindingVerdict`, `EvidenceMeta`, `TimeseriesResult`, `DarkmoonEvent`,
+  and their inputs; shared helpers `computeRetestVerdicts` / `summarizeVerdicts`
+  / `evidenceMetaFromFinding` / `findingKey`.
+- `ProHttpConfig` gains opt-in `retries` / `backoffMs` (bounded retry on
+  transient GET failures) and `pageSize` (client-side result cap). All default
+  off — no behaviour change for existing callers.
+
+### Changed
+- Standardized the package specifier to `@darkmoon_ai/client` across all source
+  comments (the published npm scope; some in-source comments still read
+  `@darkmoon/client`).
+
 ## [0.1.0] - 2026-09-24
 
 Initial public release. Implements the frozen cross-version contract

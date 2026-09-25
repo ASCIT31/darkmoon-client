@@ -1,5 +1,5 @@
 /**
- * @darkmoon/client — FROZEN public contract (§2.2 of the integrations plan).
+ * @darkmoon_ai/client — FROZEN public contract (§2.2 of the integrations plan).
  *
  * These types are the single source of truth that the 5 official integrations
  * (GitHub Actions, GitLab CI/CD, Jenkins, VS Code, JetBrains) build against.

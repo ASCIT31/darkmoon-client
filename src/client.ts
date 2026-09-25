@@ -17,6 +17,19 @@ import type {
   SeveritySummary,
   WaitOptions,
 } from "./contract.js";
+import type {
+  DarkmoonEvent,
+  DarkmoonClientExtensions,
+  EvidenceMeta,
+  EventStreamOptions,
+  RetestInput,
+  RetestLaunchResult,
+  RetestResult,
+  TimeseriesQuery,
+  TimeseriesResult,
+  WebhookInput,
+  WebhookRegistration,
+} from "./extensions.js";
 import type { Backend } from "./backends/backend.js";
 import { ProHttpBackend, type ProHttpConfig } from "./backends/pro-http.js";
 import { OssLocalBackend, type OssLocalConfig } from "./backends/oss-local.js";
@@ -47,7 +60,7 @@ const STUCK = new Set(["running", "queued", "unknown"]);
  * contract and owns the cross-cutting policy: redaction defaults, hard-timeout /
  * stuck-campaign handling, and never deriving pass/fail from a process exit code.
  */
-export class DarkmoonClient implements DarkmoonClientContract {
+export class DarkmoonClient implements DarkmoonClientContract, DarkmoonClientExtensions {
   private cfg: DarkmoonClientConfig;
   private log: Logger;
   private backend: Backend | null = null;
@@ -222,6 +235,49 @@ export class DarkmoonClient implements DarkmoonClientContract {
   async *streamProgress(ref: CampaignRef): AsyncIterable<ProgressEvent> {
     const be = await this.be();
     yield* be.streamProgress(DarkmoonClient.toHandle(ref));
+  }
+
+  // ── v0.2.0 additive surface (Phase-2 integrations) ─────────────────────
+  // Delegates to the active backend. OSS degrades gracefully (webhooks throw
+  // NOT_SUPPORTED; retest/events/timeseries computed client-side).
+
+  async registerWebhook(input: WebhookInput): Promise<WebhookRegistration> {
+    if (!input?.url) throw new DarkmoonError("BAD_REQUEST", "registerWebhook requires a `url`.");
+    return (await this.be()).registerWebhook(input);
+  }
+
+  async listWebhooks(): Promise<WebhookRegistration[]> {
+    return (await this.be()).listWebhooks();
+  }
+
+  async deleteWebhook(id: string): Promise<boolean> {
+    if (!id) throw new DarkmoonError("BAD_REQUEST", "deleteWebhook requires an id.");
+    return (await this.be()).deleteWebhook(id);
+  }
+
+  async launchRetest(input: RetestInput): Promise<RetestLaunchResult> {
+    if (!input?.targetId && !input?.campaignId) {
+      throw new DarkmoonError("BAD_REQUEST", "launchRetest requires `targetId` or `campaignId`.");
+    }
+    return (await this.be()).launchRetest(input);
+  }
+
+  async getRetest(id: string): Promise<RetestResult> {
+    if (!id) throw new DarkmoonError("BAD_REQUEST", "getRetest requires a retest id.");
+    return (await this.be()).getRetest(id);
+  }
+
+  async getEvidenceMeta(id: string): Promise<EvidenceMeta> {
+    if (!id) throw new DarkmoonError("BAD_REQUEST", "getEvidenceMeta requires a finding id.");
+    return (await this.be()).getEvidenceMeta(id);
+  }
+
+  async getTimeseries(query?: TimeseriesQuery): Promise<TimeseriesResult> {
+    return (await this.be()).getTimeseries(query);
+  }
+
+  async *streamEvents(opts?: EventStreamOptions): AsyncIterable<DarkmoonEvent> {
+    yield* (await this.be()).streamEvents(opts);
   }
 
   private static assertFullOptIn(opts?: FindingReadOptions): void {

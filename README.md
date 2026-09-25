@@ -1,5 +1,11 @@
 # @darkmoon_ai/client
 
+Cross-version client for **Darkmoon OSS (CLI)** and **Darkmoon Pro (REST)** — one frozen contract, both editions, redaction-safe by default.
+
+![darkmoon-ci running against a synthetic Demo Shop lab (OSS mode)](https://raw.githubusercontent.com/ASCIT31/darkmoon-client/master/docs/screenshots/darkmoon-ci.png)
+
+> `darkmoon-ci` OSS terminal output against a synthetic, authorized Demo Shop lab — findings are redaction-safe (evidence `null` by default).
+
 
 ## ⭐ Darkmoon ecosystem
 
@@ -45,6 +51,27 @@ const findings = await client.listFindings({ campaignId: campaign.id });
 const verdict  = computeFailPolicy(findings, "critical,high");
 if (verdict.failed) process.exit(verdict.exitCode);       // exit 2
 ```
+
+### v0.2.0 — integration surface (Splunk · Grafana · n8n)
+
+Additive on top of the frozen v1 methods (`CONTRACT_VERSION` stays `1.0.0`):
+
+```ts
+// Triggers: webhooks (Pro) or a replayable event stream (Pro SSE / OSS poll)
+const wh = await client.registerWebhook({ url: "https://splunk:8088/…", events: ["finding.exploited"] });
+for await (const ev of client.streamEvents({ since: 0, events: ["campaign.completed"] })) { /* … */ }
+
+// Retest → derived verdict {fixed|still_present|regressed|new}
+const rt = await client.launchRetest({ campaignId });
+const result = await client.getRetest(rt.retestId);       // result.verdictsSummary
+
+// Redaction-safe evidence indicator + dashboard rollups
+const meta = await client.getEvidenceMeta(findingId);      // counts only, never bodies
+const ts   = await client.getTimeseries({ metric: "severity", group: "day" });
+```
+
+OSS degrades gracefully: webhooks throw `NOT_SUPPORTED` (no server), while retest,
+evidence-meta, time-series and the event stream are computed client-side.
 
 ## CLI (`darkmoon-ci`)
 

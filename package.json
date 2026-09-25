@@ -1,6 +1,6 @@
 {
   "name": "@darkmoon_ai/client",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Cross-version common client contract for Darkmoon OSS (CLI) and Darkmoon Pro (REST). Foundation for the 5 official integrations.",
   "license": "MIT",
   "author": "ASC-IT (SARL) — Darkmoon",

@@ -88,6 +88,46 @@ interface Report { campaignId; format; content; ready; redacted; }
 `Campaign.raw` / `Finding.raw` carry the backend's raw object. **Do not log,
 serialize, or emit `raw` to CI output** — it may contain rehydrated real values.
 
+## 2b. The v0.2.0 additive surface (Phase-2: Splunk · Grafana · n8n)
+
+New in `0.2.0`, ADDITIVE on top of the frozen v1 surface (`CONTRACT_VERSION`
+stays `1.0.0`). The three new integrations consume ONLY these + the frozen v1
+methods above. Pin `@darkmoon_ai/client@^0.2.0`.
+
+```ts
+// Webhooks (Pro-only; OSS throws NOT_SUPPORTED → fall back to streamEvents polling)
+registerWebhook(input: WebhookInput): Promise<WebhookRegistration>; // secret returned ONCE
+listWebhooks(): Promise<WebhookRegistration[]>;                     // secret masked ("set:xxxx")
+deleteWebhook(id: string): Promise<boolean>;
+
+// Retest + DERIVED verdict {fixed|still_present|regressed|new} (never a stored status)
+launchRetest(input: RetestInput): Promise<RetestLaunchResult>;      // {targetId|campaignId, findingIds?, safeHarbor?}
+getRetest(id: string): Promise<RetestResult>;                       // Pro: /retest · OSS: run + diff client-side
+
+// Evidence metadata — counts/booleans/command-names only, never evidence bodies
+getEvidenceMeta(id: string): Promise<EvidenceMeta>;
+
+// Server-side (Pro) / client-side (OSS) time-bucketed rollups
+getTimeseries(query?: TimeseriesQuery): Promise<TimeseriesResult>;  // metric: severity|status|category|campaigns
+
+// Consolidated, replayable event stream (Pro SSE · OSS synthetic poll-diff)
+streamEvents(opts?: EventStreamOptions): AsyncIterable<DarkmoonEvent>; // {since, events, pollIntervalMs, signal}
+```
+
+Event taxonomy (`DarkmoonEvent.event`, safe fields only in `.data`):
+`campaign.started|completed|stopped|aborted`, `finding.discovered|confirmed|exploited|remediated`,
+`pr.opened|updated`, `retest.started|completed`.
+
+`RetestVerdict = fixed | still_present | regressed | new`. Webhook deliveries are
+`X-Darkmoon-Signature: sha256=<hmac(secret, rawBody)>` with replay headers
+(`X-Darkmoon-Delivery/Nonce/Timestamp`). Shared, edition-neutral helpers are
+exported for consumers that compute verdicts/metadata themselves:
+`computeRetestVerdicts`, `summarizeVerdicts`, `evidenceMetaFromFinding`, `findingKey`.
+
+`ProHttpConfig` additionally accepts opt-in `retries` / `backoffMs` (bounded retry
+on transient GET failures) and `pageSize` (client-side result cap) — all default
+off.
+
 ## 3. Safety contract (integrations MUST honor)
 
 - **Redaction-safe by default.** `getReport()` returns a redacted body (evidence

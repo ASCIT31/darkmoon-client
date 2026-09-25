@@ -1,5 +1,5 @@
 /**
- * darkmoon-ci — portable CI CLI built on @darkmoon/client.
+ * darkmoon-ci — portable CI CLI built on @darkmoon_ai/client.
  *
  * Jenkins / GitLab / any runner call this bin. It launches, waits, fetches
  * findings/summary/report, and emits a fail-policy exit code computed FROM

@@ -64,6 +64,31 @@ class FakeBackend implements Backend {
   async resolveCampaignId() {
     return "camp_test";
   }
+  // v0.2.0 additive surface (stubs — exercised in extensions tests, not here)
+  async registerWebhook() {
+    return { id: "wh_x", url: "http://x", events: [], format: "darkmoon", enabled: true, createdAt: null };
+  }
+  async listWebhooks() {
+    return [];
+  }
+  async deleteWebhook() {
+    return true;
+  }
+  async launchRetest() {
+    return { retestId: "retest_x", runId: "run_x", baseCampaignId: "camp_test", targetId: null };
+  }
+  async getRetest() {
+    return { retestId: "retest_x", baseCampaignId: "camp_test", newCampaignId: null, targetId: null, runId: "run_x", status: "running" as const, verdictsSummary: { fixed: 0, still_present: 0, regressed: 0, new: 0 }, findings: [], edition: "pro" as const };
+  }
+  async getEvidenceMeta() {
+    return { vulnId: "v", hasEvidence: false, counts: { commands: 0, payloads: 0, screenshots: 0, logs: 0, requests: 0 }, commandNames: [], hasScreenshot: false, hasExtractedData: false, redacted: true };
+  }
+  async getTimeseries() {
+    return { metric: "severity", group: "day", series: [], edition: "pro" as const };
+  }
+  async *streamEvents() {
+    // no events in the fake
+  }
 }
 
 function clientWith(be: Backend): DarkmoonClient {
