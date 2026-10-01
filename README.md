@@ -117,3 +117,18 @@ CONTRACT.md     the frozen API + link method for the 5 integrations
 Real OSS validation runs against the local WSL stack and an authorized lab
 (Juice Shop). Pro validation runs against the real Front-API FastAPI locally and
 a contract mock for fault injection. See `test/` and the delivery notes.
+
+## 🎥 Video tutorial
+
+[![Watch the Darkmoon + SDK / CLI tutorial on YouTube](https://img.youtube.com/vi/jMIMvV8yEK8/maxresdefault.jpg)](https://youtu.be/jMIMvV8yEK8)
+
+▶ **[Watch the full Darkmoon + SDK / CLI tutorial on YouTube](https://youtu.be/jMIMvV8yEK8)** — real setup, end to end.
+
+## Darkmoon ecosystem
+
+Darkmoon is an open-source, AI-powered penetration testing platform. It runs a full autonomous assessment and this integration brings the results into your SDK / CLI workflow.
+
+- ⭐ **Flagship (star it):** https://github.com/ASCIT31/Dark-Moon
+- 📚 **Docs:** https://docs.dark-moon.org
+- 🌐 **Website:** https://dark-moon.org
+- 🔗 **Related integrations:** [darkmoon-vscode](https://github.com/ASCIT31/darkmoon-vscode) · [darkmoon-n8n](https://github.com/ASCIT31/darkmoon-n8n) 
