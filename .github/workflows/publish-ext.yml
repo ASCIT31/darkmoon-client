@@ -1,0 +1,23 @@
+name: publish-ext
+on:
+  workflow_dispatch:
+    inputs:
+      repo: { description: "package repo owner/name", required: true }
+      ref:  { description: "git ref or sha", required: true, default: "main" }
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone package
+        run: |
+          git clone "https://github.com/${{ github.event.inputs.repo }}.git" pkg
+          cd pkg && git checkout "${{ github.event.inputs.ref }}"
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", registry-url: "https://registry.npmjs.org" }
+      - name: Build and publish
+        working-directory: pkg
+        env: { NODE_AUTH_TOKEN: "${{ secrets.NPM_TOKEN }}" }
+        run: |
+          npm ci
+          npm run build --if-present
+          npm publish --access public
